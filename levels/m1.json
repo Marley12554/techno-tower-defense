@@ -1,0 +1,42 @@
+{
+  "id": "m1",
+  "name": "Boot Sector",
+  "sector": "01",
+  "grid": [
+    "..................",
+    "S.................",
+    "....##......o.....",
+    "....##............",
+    "..........###...CC",
+    "..........###...CC",
+    "....##............",
+    "....##......o.....",
+    "S.................",
+    ".................."
+  ],
+  "startBits": 180,
+  "integrity": 20,
+  "hpGrowth": 0.17,
+  "stars": [20, 12],
+  "waves": [
+    { "groups": [{ "type": "worm", "count": 8, "every": 1.0 }] },
+    { "groups": [{ "type": "worm", "count": 14, "every": 0.7 }] },
+    { "groups": [{ "type": "worm", "count": 10, "every": 0.7 }, { "type": "spyware", "count": 4, "every": 1.4, "at": 5 }] },
+    { "groups": [{ "type": "worm", "count": 22, "every": 0.4 }] },
+    { "groups": [{ "type": "spyware", "count": 8, "every": 0.8 }, { "type": "worm", "count": 10, "every": 0.6, "at": 2 }] },
+    { "groups": [{ "type": "trojan", "count": 2, "every": 5 }, { "type": "worm", "count": 10, "every": 0.6, "at": 3 }] },
+    { "groups": [{ "type": "worm", "count": 30, "every": 0.3 }] },
+    { "groups": [{ "type": "spyware", "count": 14, "every": 0.5 }] },
+    { "groups": [{ "type": "trojan", "count": 4, "every": 4 }, { "type": "spyware", "count": 8, "every": 0.7, "at": 6 }] },
+    { "groups": [{ "type": "worm", "count": 32, "every": 0.28 }, { "type": "trojan", "count": 2, "every": 3, "at": 5 }] },
+    { "groups": [{ "type": "spyware", "count": 20, "every": 0.4 }, { "type": "worm", "count": 12, "every": 0.5, "at": 4 }] },
+    { "groups": [{ "type": "trojan", "count": 6, "every": 2.8 }, { "type": "worm", "count": 20, "every": 0.4, "at": 4 }] },
+    { "groups": [{ "type": "worm", "count": 44, "every": 0.22 }, { "type": "spyware", "count": 12, "every": 0.5, "at": 7 }] },
+    { "groups": [{ "type": "trojan", "count": 8, "every": 2.2 }, { "type": "spyware", "count": 16, "every": 0.45, "at": 3 }] },
+    { "groups": [
+      { "type": "worm", "count": 40, "every": 0.25 },
+      { "type": "spyware", "count": 20, "every": 0.4, "at": 6 },
+      { "type": "trojan", "count": 8, "every": 2, "at": 3, "hp": 1.15 }
+    ] }
+  ]
+}
