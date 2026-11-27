@@ -14,11 +14,11 @@ uniform float uTime; uniform float uOpacity; uniform float uLines; uniform float
 varying vec2 vUv;
 void main() {
   float along = vUv.y;                                   // 1 at the eye, 0 at the target
-  float body = smoothstep(0.0, 0.2, along) * (0.25 + 0.75 * along);
-  float stripe = smoothstep(0.86, 1.0, fract(along * uLines + uTime * uSpeed));
-  float vib = 0.82 + 0.18 * sin(uTime * 61.0 + along * 37.0);
-  float a = uOpacity * (0.16 * body + 0.7 * stripe * smoothstep(0.0, 0.1, along)) * vib;
-  gl_FragColor = vec4(uColor * (1.0 + 1.6 * stripe), a);
+  float body = smoothstep(0.0, 0.25, along) * (0.3 + 0.7 * along);
+  float stripe = smoothstep(0.9, 1.0, fract(along * uLines + uTime * uSpeed)) * smoothstep(0.0, 0.15, along);
+  float vib = 0.93 + 0.07 * sin(uTime * 40.0 + along * 20.0);
+  float a = uOpacity * (0.13 * body + 0.4 * stripe) * vib;
+  gl_FragColor = vec4(uColor * (1.0 + 1.1 * stripe), a);
 }`;
 const poolFrag = /* glsl */ `
 uniform float uTime; uniform float uOpacity; uniform float uGrid; uniform float uRings; uniform vec3 uColor;
@@ -29,22 +29,22 @@ void main() {
   float r = length(p);
   if (r > 1.0) discard;
   float edge = smoothstep(1.0, 0.7, r);
-  float rings = 0.5 + 0.5 * sin(r * 26.0 - uTime * 15.0);
+  float rings = 0.5 + 0.5 * sin(r * 16.0 - uTime * 6.0);
   float rim = smoothstep(0.06, 0.0, abs(r - 0.9));
-  float scanY = 1.0 - smoothstep(0.0, 0.04, abs(fract(vUv.y - uTime * 0.9) - 0.5));
-  float scanX = 1.0 - smoothstep(0.0, 0.04, abs(fract(vUv.x + uTime * 0.7) - 0.5));
-  float shimmer = 0.8 + 0.2 * hash(floor(vUv * 36.0) + floor(uTime * 24.0));
-  float a = uOpacity * shimmer * (edge * (0.18 + 0.22 * rings * uRings) + rim * 0.55 + edge * (scanY * 0.9 + scanX * uGrid * 0.9));
+  float scanY = 1.0 - smoothstep(0.0, 0.035, abs(fract(vUv.y - uTime * 0.6) - 0.5));
+  float scanX = 1.0 - smoothstep(0.0, 0.035, abs(fract(vUv.x + uTime * 0.45) - 0.5));
+  float shimmer = 0.9 + 0.1 * hash(floor(vUv * 30.0) + floor(uTime * 12.0));
+  float a = uOpacity * shimmer * (edge * (0.16 + 0.14 * rings * uRings) + rim * 0.4 + edge * (scanY * 0.6 + scanX * uGrid * 0.45));
   gl_FragColor = vec4(uColor * (1.0 + scanY + scanX * uGrid), a);
 }`;
 
 export interface FieldStyle { opacity: number; lines: number; speed: number; pool: number; grid: number; rings: number; core: boolean; coneR: number }
 
 export const FIELD_STYLE: Record<'mk1' | 'mk2' | 'mk3' | 'drone', FieldStyle> = {
-  mk1: { opacity: 0.6, lines: 3, speed: 2.4, pool: 0.22, grid: 0, rings: 0.4, core: false, coneR: 0.11 },
-  mk2: { opacity: 0.8, lines: 5, speed: 3.4, pool: 0.27, grid: 0, rings: 1, core: false, coneR: 0.14 },
-  mk3: { opacity: 1, lines: 8, speed: 4.6, pool: 0.32, grid: 1, rings: 1, core: true, coneR: 0.16 },
-  drone: { opacity: 0.55, lines: 3, speed: 3, pool: 0.15, grid: 0, rings: 0.6, core: false, coneR: 0.07 },
+  mk1: { opacity: 0.6, lines: 1, speed: 0.9, pool: 0.22, grid: 0, rings: 0.3, core: false, coneR: 0.11 },
+  mk2: { opacity: 0.75, lines: 2, speed: 1.1, pool: 0.26, grid: 0, rings: 0.6, core: false, coneR: 0.13 },
+  mk3: { opacity: 0.9, lines: 3, speed: 1.3, pool: 0.3, grid: 1, rings: 0.8, core: true, coneR: 0.15 },
+  drone: { opacity: 0.45, lines: 1, speed: 1, pool: 0.14, grid: 0, rings: 0.4, core: false, coneR: 0.06 },
 };
 
 function mat(frag: string, color: THREE.Color): THREE.ShaderMaterial {
@@ -111,12 +111,12 @@ export class LightField {
       const l2 = from.distanceTo(to);
       this.core.position.copy(from).add(to).multiplyScalar(0.5);
       this.core.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), from.clone().sub(to).normalize());
-      this.core.scale.set(1 + 0.6 * Math.sin(t * 47), l2, 1 + 0.6 * Math.sin(t * 47));
-      (this.core.material as THREE.MeshBasicMaterial).opacity = 0.9 * k;
+      this.core.scale.set(1 + 0.25 * Math.sin(t * 30), l2, 1 + 0.25 * Math.sin(t * 30));
+      (this.core.material as THREE.MeshBasicMaterial).opacity = 0.6 * k;
     }
     // the field vibrates: a fast jitter in size on top of the shader's rings and shimmer
     this.pool.position.copy(ground);
-    this.pool.scale.setScalar(k * (1 + 0.05 * Math.sin(t * 53) + 0.03 * Math.sin(t * 31)));
+    this.pool.scale.setScalar(k * (1 + 0.025 * Math.sin(t * 37) + 0.015 * Math.sin(t * 23)));
     this.poolMat.uniforms.uTime.value = t;
     this.poolMat.uniforms.uOpacity.value = this.style.opacity * k;
   }

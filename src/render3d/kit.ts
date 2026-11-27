@@ -192,3 +192,14 @@ export function findClipping(root: THREE.Object3D, frac = 0.18): string[] {
   }
   return out;
 }
+
+/**
+ * A cap on the front (+Z) of a sphere of radius r: for irises and pupils that
+ * sit on an eyeball's surface instead of a flat disc buried inside it.
+ * `angle` is the cap's half-angle in radians.
+ */
+export function eyeCap(r: number, angle: number, mat: THREE.Material): THREE.Mesh {
+  const g = new THREE.SphereGeometry(r, 32, 8, 0, Math.PI * 2, 0, angle);
+  g.rotateX(Math.PI / 2);
+  return new THREE.Mesh(g, mat);
+}

@@ -26,11 +26,13 @@ const LINEAGES: Record<Lineage, { label: string; color: string; redone: boolean;
 /* Older rounds stay viewable for comparison, behind the ⋯ menu. */
 type Version = 'current' | 'r5' | 'r4';
 const VERSIONS: Record<Lineage, { id: Version | '2d'; label: string }[]> = {
-  inspector: [{ id: 'current', label: 'Current (round 6)' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
+  inspector: [{ id: 'current', label: 'Current (round 7, A or B)' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
   limiter: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
   sandbox: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
 };
 let version: Version = 'current';
+let variant: 'cute' | 'robot' = (params0().get('variant') as 'cute' | 'robot') || 'cute';
+function params0(): URLSearchParams { return new URLSearchParams(location.search); }
 /** What the lab needs from any tower, whichever round it comes from. */
 interface LabTower { root: THREE.Group; range: number; locks: THREE.Vector3[]; onFire: ((e: FireEvent) => void) | null; update(dt: number, t: number, targets: THREE.Vector3[]): void }
 function makeTower(kind: Lineage, stage: Stage): LabTower {
@@ -41,7 +43,7 @@ function makeTower(kind: Lineage, stage: Stage): LabTower {
     old.onFire = (e) => w.onFire?.(e);
     return w;
   }
-  return buildTower(kind, stage) as unknown as LabTower;
+  return buildTower(kind, stage, variant) as unknown as LabTower;
 }
 const params = new URLSearchParams(location.search);
 let lineage: Lineage = (params.get('lineage') as Lineage) || 'inspector';
@@ -204,9 +206,11 @@ function buildWorld(): void {
     labelsEl.append(el);
     return el;
   });
-  const vLabel = VERSIONS[lineage].find((x) => x.id === version)?.label ?? '';
-  document.getElementById('note')!.textContent = version !== 'current' ? `COMPARING · ${vLabel.toUpperCase()}` : L.redone ? '' : 'NOT REDONE YET · OLD MODELS';
+  solo = null;
+  updateNote();
   renderVersionMenu();
+  document.getElementById('variant')!.style.display = lineage === 'inspector' && version === 'current' ? 'flex' : 'none';
+  document.querySelectorAll<HTMLButtonElement>('[data-variant]').forEach((b) => b.classList.toggle('on', b.dataset.variant === variant));
   packets.forEach((p, i) => { p.dist = (i / packets.length) * total; });
   focusGoal.copy(HOME); zoomGoal = 1;
   resize();
@@ -330,22 +334,52 @@ function resize(): void {
 }
 addEventListener('resize', resize);
 
-let drag: { x: number; y: number; a: number; e: number; moved: boolean } | null = null;
+// One finger / left mouse: pan. Two fingers / right mouse / shift: rotate. Pinch / wheel: zoom.
+// Tap a tower: zoom in and solo it (only it engages). Tap empty board: back to the full view.
+let drag: { x: number; y: number; lx: number; ly: number; rotate: boolean; moved: boolean } | null = null;
 const touches = new Map<number, { x: number; y: number }>();
-let pinch0 = 0, pinchZoom = 1;
+let pinch0 = 0, pinchZoom = 1, mid0 = { x: 0, y: 0 }, azim0 = 0, elev0 = 0;
+let solo: number | null = null;
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('pointerdown', (e) => {
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
-  if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); pinchZoom = zoomGoal; drag = null; return; }
-  drag = { x: e.clientX, y: e.clientY, a: azim, e: elev, moved: false };
+  if (touches.size === 2) {
+    const [a, b] = [...touches.values()];
+    pinch0 = Math.hypot(a.x - b.x, a.y - b.y); pinchZoom = zoomGoal;
+    mid0 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; azim0 = azim; elev0 = elev;
+    drag = null;
+    return;
+  }
+  drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, rotate: e.button === 2 || e.shiftKey, moved: false };
 });
+function pan(dx: number, dy: number): void {
+  const upp = (camera.top - camera.bottom) / camera.zoom / innerHeight;
+  const rx = Math.cos(azim), rz = -Math.sin(azim), fx = -Math.sin(azim), fz = -Math.cos(azim);
+  const k = upp / Math.max(0.3, Math.sin(elev));
+  focusGoal.x += -rx * dx * upp + fx * dy * k;
+  focusGoal.z += -rz * dx * upp + fz * dy * k;
+  focusGoal.x = THREE.MathUtils.clamp(focusGoal.x, -BW / 2, BW / 2);
+  focusGoal.z = THREE.MathUtils.clamp(focusGoal.z, -BD / 2, BD / 2);
+  focus.copy(focusGoal);
+}
 canvas.addEventListener('pointermove', (e) => {
   if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (touches.size === 2) { const [a, b] = [...touches.values()]; zoomGoal = THREE.MathUtils.clamp(pinchZoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch0, 0.8, 6); return; }
+  if (touches.size === 2) {
+    const [a, b] = [...touches.values()];
+    zoomGoal = THREE.MathUtils.clamp(pinchZoom * Math.hypot(a.x - b.x, a.y - b.y) / pinch0, 0.8, 6);
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    azim = azim0 - (mx - mid0.x) * 0.008;
+    elev = THREE.MathUtils.clamp(elev0 + (my - mid0.y) * 0.006, THREE.MathUtils.degToRad(15), THREE.MathUtils.degToRad(85));
+    return;
+  }
   if (!drag) return;
-  if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) drag.moved = true;
-  azim = drag.a - (e.clientX - drag.x) * 0.008;
-  elev = THREE.MathUtils.clamp(drag.e + (e.clientY - drag.y) * 0.006, THREE.MathUtils.degToRad(15), THREE.MathUtils.degToRad(85));
+  if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 10) drag.moved = true;
+  const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly;
+  drag.lx = e.clientX; drag.ly = e.clientY;
+  if (!drag.moved) return;
+  if (drag.rotate) { azim -= dx * 0.008; elev = THREE.MathUtils.clamp(elev + dy * 0.006, THREE.MathUtils.degToRad(15), THREE.MathUtils.degToRad(85)); }
+  else pan(dx, dy);
 });
 const ray = new THREE.Raycaster(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitP = new THREE.Vector3();
 canvas.addEventListener('pointerup', (e) => {
@@ -353,14 +387,21 @@ canvas.addEventListener('pointerup', (e) => {
   if (drag && !drag.moved) {
     ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), camera);
     if (ray.ray.intersectPlane(ground, hitP)) {
-      let best: Slot | null = null, bd = 0.9;
-      for (const sl of slots) { const d = Math.hypot(hitP.x - sl.x, hitP.z - sl.z); if (d < bd) { bd = d; best = sl; } }
-      if (best) { focusGoal.set(best.x, 0.35, best.z); zoomGoal = 2.6; } else { focusGoal.copy(HOME); zoomGoal = 1; }
+      let best = -1, bd = 0.95;
+      slots.forEach((sl, i) => { const d = Math.hypot(hitP.x - sl.x, hitP.z - sl.z); if (d < bd) { bd = d; best = i; } });
+      setSolo(best >= 0 ? best : null);
     }
   }
   drag = null;
 });
+canvas.addEventListener('pointercancel', (e) => { touches.delete(e.pointerId); drag = null; });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomGoal = THREE.MathUtils.clamp(zoomGoal * Math.pow(1.0015, -e.deltaY), 0.8, 6); }, { passive: false });
+function setSolo(i: number | null): void {
+  solo = i;
+  if (i === null) { focusGoal.copy(HOME); zoomGoal = 1; }
+  else { focusGoal.set(slots[i].x, 0.35, slots[i].z); zoomGoal = Math.max(zoomGoal, 2.4); }
+  updateNote();
+}
 
 const $ = (id: string) => document.getElementById(id)!;
 $('hostiles').addEventListener('click', () => { hostiles = !hostiles; $('hostiles').classList.toggle('on', hostiles); });
@@ -376,6 +417,17 @@ document.querySelectorAll<HTMLButtonElement>('[data-lineage]').forEach((b) => {
     buildWorld();
   });
 });
+
+function updateNote(): void {
+  const L = LINEAGES[lineage];
+  const vLabel = VERSIONS[lineage].find((x) => x.id === version)?.label ?? '';
+  const parts: string[] = [];
+  if (version !== 'current') parts.push(`COMPARING · ${vLabel.toUpperCase()}`);
+  else if (!L.redone) parts.push('NOT REDONE YET · OLD MODELS');
+  if (solo !== null && slots[solo]) parts.push(`SOLO · ${slots[solo].name} · TAP EMPTY BOARD TO EXIT`);
+  document.getElementById('note')!.textContent = parts.join('   ');
+}
+document.querySelectorAll<HTMLButtonElement>('[data-variant]').forEach((b) => b.addEventListener('click', () => { variant = b.dataset.variant as 'cute' | 'robot'; buildWorld(); }));
 
 /* ------------------------------------------------------------ compare menu */
 const menu = $('vermenu');
@@ -457,7 +509,7 @@ function frame(now: number): void {
       .filter((p) => p.pos.z > WALL_Z && Math.hypot(p.pos.x - s.x, p.pos.z - s.z) <= s.tower.range)
       .sort((a, b) => Math.hypot(a.pos.x - s.x, a.pos.z - s.z) - Math.hypot(b.pos.x - s.x, b.pos.z - s.z))
       .map((p) => p.pos);
-    s.tower.update(dt, tAcc, ts);
+    s.tower.update(dt, tAcc, solo === null || slots[solo] === s ? ts : []);
     for (const l of s.tower.locks) lockSet.add(l);
   }
   const locks = [...lockSet];
@@ -481,7 +533,9 @@ function frame(now: number): void {
 requestAnimationFrame(frame);
 (window as unknown as { __lab: unknown }).__lab = {
   get slots() { return slots; },
-  focusOn: (i: number, z = 2.6) => { focusGoal.set(slots[i].x, 0.35, slots[i].z); zoomGoal = z; },
+  focusOn: (i: number, z = 2.6) => { setSolo(i); zoomGoal = z; },
+  unsolo: () => setSolo(null),
+  setVariant: (v: 'cute' | 'robot') => { variant = v; buildWorld(); },
   setView: (a: number, el: number) => { azim = a; elev = el; },
   setLineage: (l: Lineage) => { lineage = l; buildWorld(); },
 };
