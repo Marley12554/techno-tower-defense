@@ -206,11 +206,25 @@ export class Play {
     if (c && c.id === e.pointerId) {
       this.canvasDown = null;
       if (Math.hypot(e.clientX - c.x, e.clientY - c.y) > TAP_SLOP * 2) return;
-      const cell = this.renderer.cellAt(e.clientX, e.clientY);
-      const t = cell ? this.sim.towerAtCell(cell[0], cell[1]) : null;
-      if (t) { this.select(t === this.view.selected ? null : t); }
-      else this.select(null);
+      // Tapping the selected tower keeps it open; tap empty board or × to close.
+      this.select(this.towerNear(e.clientX, e.clientY));
     }
+  }
+
+  /** Tower under a tap, with some slack: fingers land off-center on small cells. */
+  private towerNear(px: number, py: number): Tower | null {
+    const cell = this.renderer.cellAt(px, py);
+    const exact = cell ? this.sim.towerAtCell(cell[0], cell[1]) : null;
+    if (exact) return exact;
+    const reach = this.renderer.L.cell * 0.85;
+    let best: Tower | null = null;
+    let bestD = reach * reach;
+    for (const t of this.sim.towers) {
+      const [x, y] = this.renderer.cellCenter(t.cx, t.cy);
+      const d = (x - px) ** 2 + (y - py) ** 2;
+      if (d < bestD) { bestD = d; best = t; }
+    }
+    return best;
   }
 
   private pointerCancel(e: PointerEvent): void {
@@ -300,6 +314,7 @@ export class Play {
     const prev = this.view.selected;
     this.view.selected = t;
     this.view.preview = null;
+    document.body.classList.toggle('inspecting', !!t);
     if (t) {
       this.disarm();
       this.openInspector(t);
@@ -312,10 +327,16 @@ export class Play {
 
   private openInspector(t: Tower): void {
     const L = this.renderer.L;
-    const rightHalf = t.cx >= L.cols / 2;
-    const side = rightHalf ? 'left' : 'right';
-    const x = rightHalf ? Math.max(8, L.ox + 6) : L.panel + 8 + Math.max(0, L.w - L.panel - (L.ox + L.cols * L.cell) - 2);
-    this.inspector?.open(t, this.sim, side, L.oy + 6, L.rows * L.cell - 12, x);
+    // Dock over the build panel (not needed while inspecting) so it hides as little of the
+    // board as possible. Only if the tower itself would be underneath, dock on the left.
+    const W = Math.min(250, L.w * 0.42);
+    const edge = L.safe.r + 4;
+    const [tx] = this.renderer.cellCenter(t.cx, t.cy);
+    const fitsRight = tx + L.cell * 0.7 < L.w - edge - W;
+    const top = Math.max(L.safe.t, 4) + 4;
+    const maxH = L.h - top - Math.max(L.safe.b, 4) - 4;
+    if (fitsRight) this.inspector?.open(t, this.sim, 'right', top, maxH, edge);
+    else this.inspector?.open(t, this.sim, 'left', top, maxH, Math.max(8, L.ox + 6));
   }
 
   private startWave(): void {
@@ -469,6 +490,7 @@ export class Play {
 
   dispose(): void {
     cancelAnimationFrame(this.raf);
+    document.body.classList.remove('inspecting');
     for (const d of this.disposers) d();
     this.disposers = [];
     this.hud?.dispose();

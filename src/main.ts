@@ -1,5 +1,8 @@
 import './ui/styles.css';
 import { App } from './ui/app';
+import { guardZoom } from './ui/zoom';
+
+guardZoom();
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLElement;

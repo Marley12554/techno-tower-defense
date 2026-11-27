@@ -223,7 +223,10 @@ export class Hud {
     this.briefEl.classList.remove('in');
     void this.briefEl.offsetWidth;
     this.briefEl.classList.add('in');
+    clearTimeout(this.briefTimer);
+    this.briefTimer = window.setTimeout(() => this.hideBrief(), 9000);
   }
+  private briefTimer = 0;
 
   hideBrief(): void { this.briefEl.classList.add('hidden'); }
 
