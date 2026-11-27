@@ -13,13 +13,14 @@
  * on, lit, deployed) and reports shots through `onFire` for the effects layer.
  */
 import * as THREE from 'three';
-import { GEN, MAT, ROLE, at, axle, barrel, box, contactShadow, cyl, glow, hexFlat, hexX, joint, lightPool, prism, ring, strut } from './kit';
+import { GEN, MAT, ROLE, at, box, contactShadow, cyl, glow, hexFlat, hexX, joint, lightPool, prism, ring, strut } from './kit';
+import { FIELD_STYLE, LightField } from './field';
 
 const ring_ = ring;
 
 export type Stage = 'mk1' | 'mk2' | 'mk3' | 'cluster1' | 'cluster2' | 'remote1' | 'remote2';
 
-export interface FireEvent { from: THREE.Vector3; to: THREE.Vector3; kind: 'beam' | 'isolate'; color: THREE.Color }
+export interface FireEvent { from: THREE.Vector3; to: THREE.Vector3; kind: 'beam' | 'isolate' | 'field'; color: THREE.Color; tier?: number }
 
 const tmp = new THREE.Vector3();
 
@@ -92,237 +93,249 @@ class Spring {
 
 /* ================================================================ INSPECTOR */
 /*
- * Personality: nervous, hyper-vigilant. Idle it doesn't sweep, it glances: snaps
- * to a spot, holds, snaps elsewhere, sometimes double-takes. Alert it locks hard,
- * the lens focuses (iris closes), and it fires in short bursts.
+ * Personality: nervous and hyper-vigilant. A fixed armored body; the helmet head
+ * turns slowly while the eye darts in its socket (eyes lead, the head follows).
+ * Idle it is half-lidded, glancing and blinking; when a hostile shows up the
+ * lids snap wide, then narrow into a focused squint while it casts its
+ * inspection light field. The scan lines in the field wear the hostile down.
  *
- * Mk I  PROBE     gen 1: a mechanical camera on a yoke, one lens
- * Mk II SENTINEL  gen 1: the same camera armored, hooded, longer focusing barrel
- *                 (damage), heat sinks (fire rate), first side sensor pod
- * Mk III ARRAY    gen 2, new technology: ceramic and glass; the camera becomes a
- *                 compound-eye sensor dome with a scan band; the heat sinks evolve
- *                 into liquid-cooled exchange panels; the side pod becomes three
- *                 drones that dock on the plinth and lift off on tethers when alert
+ * One family across all tiers (gunmetal helmet on a hex body), each built on the last:
+ * Mk I  PROBE     helmet, one eye in a socket, lids
+ * Mk II SENTINEL  + armored body, heat sinks (rate), brow plate, mechanical iris
+ *                 ring (damage), a spherical eye-pod docked in a cup on the helmet
+ * Mk III ARRAY    + crown collar, glowing seams, double iris, liquid-cooled radiators;
+ *                 the pod becomes three eye-pods that fly free and cast their own fields
  */
-interface Drone { g: THREE.Group; dock: THREE.Vector3; lift: number; yaw: Spring; tether: THREE.Mesh; lens: THREE.Object3D; cd: number }
+class Eye {
+  readonly socket = new THREE.Group();
+  readonly ball = new THREE.Group();
+  readonly pupil = new THREE.Object3D();
+  private upper = new THREE.Group();
+  private lower = new THREE.Group();
+  private irises: THREE.Mesh[] = [];
+  yaw = new Spring();
+  pitch = new Spring();
+  open = 0.45;
+
+  constructor(r: number, irisMat: THREE.Material, double: boolean) {
+    joint(this.socket.add(ring_(r * 1.17, r * 0.2, GEN.gunmetalDark)).children[0]);
+    this.socket.add(this.ball);
+    const eyeMat = new THREE.MeshPhysicalMaterial({ color: '#0c1116', metalness: 0.2, roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.04 });
+    joint(at(new THREE.Mesh(new THREE.SphereGeometry(r, 32, 20), eyeMat), 0, 0, 0, this.ball)).castShadow = true;
+    const iris = joint(at(new THREE.Mesh(new THREE.TorusGeometry(r * 0.52, r * 0.13, 10, 36), irisMat), 0, 0, r * 0.84, this.ball));
+    this.irises.push(iris);
+    if (double) this.irises.push(joint(at(new THREE.Mesh(new THREE.TorusGeometry(r * 0.3, r * 0.08, 8, 28), irisMat), 0, 0, r * 0.95, this.ball)));
+    joint(at(new THREE.Mesh(new THREE.CircleGeometry(r * 0.24, 24), new THREE.MeshBasicMaterial({ color: '#010203' })), 0, 0, r * 0.975, this.ball));
+    joint(at(new THREE.Mesh(new THREE.SphereGeometry(r * 0.08, 8, 6), new THREE.MeshBasicMaterial({ color: '#ffffff' })), r * 0.26, r * 0.28, r * 0.92, this.ball));
+    at(this.pupil, 0, 0, r * 1.05, this.ball);
+    // armored lids: caps of a slightly larger sphere that swing over the eye
+    const lidMat = new THREE.MeshStandardMaterial({ color: '#46515d', metalness: 0.55, roughness: 0.32, side: THREE.DoubleSide });
+    joint(at(new THREE.Mesh(new THREE.SphereGeometry(r * 1.1, 28, 12, 0, Math.PI * 2, 0, 1.25), lidMat), 0, 0, 0, this.upper)).castShadow = true;
+    joint(at(new THREE.Mesh(new THREE.SphereGeometry(r * 1.08, 28, 10, 0, Math.PI * 2, Math.PI - 1.05, 1.05), lidMat), 0, 0, 0, this.lower)).castShadow = true;
+    this.socket.add(this.upper, this.lower);
+  }
+
+  pose(dt: number, yaw: number, pitch: number, open: number, irisScale: number, fast: boolean): void {
+    const [k, c] = fast ? [520, 34] : [230, 15];
+    this.ball.rotation.y = this.yaw.step(Math.max(-0.75, Math.min(0.75, yaw)), k, c, dt);
+    this.ball.rotation.x = this.pitch.step(Math.max(-0.5, Math.min(0.5, pitch)), k, c, dt, false);
+    this.open += (open - this.open) * Math.min(1, dt * 22);
+    this.upper.rotation.x = 0.62 + (-0.42 - 0.62) * this.open;
+    this.lower.rotation.x = -0.5 + (0.25 + 0.5) * this.open;
+    for (const ir of this.irises) ir.scale.setScalar(ir.scale.x + (irisScale - ir.scale.x) * Math.min(1, dt * 10));
+    if (this.irises[1]) { this.irises[0].rotation.z += dt * 1.5; this.irises[1].rotation.z -= dt * 2.4; }
+  }
+}
+
+interface EyePod { g: THREE.Group; cup: THREE.Object3D; yaw: Spring; pitch: Spring; lift: number; field: LightField | null; pupil: THREE.Object3D; tick: number; flies: boolean; gaze: number }
 
 export class Inspector extends Tower3D {
-  private yawG = new THREE.Group();
-  private pitchG = new THREE.Group();
-  private yaw = new Spring();
-  private pitch = new Spring();
-  private gaze = 0;
-  private gazePitch = 0;
+  private head = new THREE.Group();
+  private eye!: Eye;
+  private headYaw = new Spring();
+  private look = 0;
+  private lookPitch = 0.1;
   private nextGlance = 0;
-  private lensTip = new THREE.Object3D();
-  private iris: THREE.Object3D | null = null;
-  private focusRing: THREE.Object3D | null = null;
-  private scanBand: THREE.Object3D | null = null;
-  private pod: { g: THREE.Group; yaw: Spring; gaze: number } | null = null;
-  private drones: Drone[] = [];
-  private burstLeft = 0;
-  private burstT = 0;
-  private focus = 0;
+  private nextBlink = 2;
+  private blinkT = -1;
+  private surprise = 0;
+  private searchUntil = 0;
+  private hadTarget = false;
+  private field: LightField;
+  private tick = 0;
+  private pods: EyePod[] = [];
+  private irisRing: THREE.Object3D | null = null;
 
   constructor(readonly tier: 1 | 2 | 3) {
     super();
     const col = ROLE.dmg;
-    const lensMat = this.addGlow(col, 0.6, 3.6);
-    const ledMat = this.addGlow(col, 0.35, 2.2);
-    this.base(col, 0.4 + tier * 0.14, 0.24 + tier * 0.08);
+    const irisMat = this.addGlow(col, 0.9, 3.8);
+    const seamMat = this.addGlow(col, 0.25, 1.3);
+    this.base(col, 0.38 + tier * 0.14, 0.24 + tier * 0.08);
     this.range = [2.4, 2.8, 3.2][tier - 1];
-    if (tier === 1) this.buildProbe(lensMat, ledMat);
-    else if (tier === 2) this.buildSentinel(lensMat, ledMat);
-    else this.buildArray(lensMat, this.addGlow(col, 0.25, 1.1));
+    this.field = new LightField(col, FIELD_STYLE[(['mk1', 'mk2', 'mk3'] as const)[tier - 1]]);
+    this.root.add(this.field.group);
+    this.build(irisMat, seamMat);
   }
 
-  /** Lens assembly on the camera body's front face (z = front). Records the tip for beams. */
-  private lens(front: number, barrelR: number, barrelLen: number, lensMat: THREE.Material, parent: THREE.Object3D, ring = false): void {
-    at(barrel(barrelR, barrelLen, GEN.gunmetalDark), 0, 0, front, parent);
-    if (ring) { this.focusRing = joint(at(ring_(barrelR + 0.004, 0.009, GEN.trim), 0, 0, front + barrelLen * 0.62, parent)); }
-    joint(at(barrel(barrelR * 0.8, 0.012, lensMat), 0, 0, front + barrelLen - 0.008, parent));
-    this.iris = joint(at(ring_(barrelR * 0.62, barrelR * 0.12, GEN.rubber), 0, 0, front + barrelLen + 0.006, parent));
-    at(this.lensTip, 0, 0, front + barrelLen + 0.01, parent);
-  }
-
-  private buildProbe(lensMat: THREE.Material, ledMat: THREE.Material): void {
-    const r = this.root;
-    at(hexX(0.2, 0.06, GEN.gunmetal), 0, 0, 0, r);
-    joint(at(hexX(0.205, 0.012, GEN.trim), 0, 0.048, 0, r));
-    at(cyl(0.065, 0.04, GEN.trim), 0, 0.06, 0, r);
-    at(this.yawG, 0, 0.1, 0, r);
-    // yoke: bottom bar between two side plates
-    at(box(0.222, 0.025, 0.06, GEN.gunmetal, 0.006), 0, 0, 0, this.yawG);
-    for (const sx of [-1, 1]) at(box(0.022, 0.15, 0.06, GEN.gunmetal, 0.006), sx * 0.122, 0, 0, this.yawG);
-    // camera on a pitch axle
-    at(this.pitchG, 0, 0.1, 0, this.yawG);
-    at(box(0.2, 0.12, 0.17, GEN.armor, 0.014), 0, -0.06, 0, this.pitchG);
-    joint(at(axle(0.018, 0.26, GEN.trim), 0, 0, 0, this.pitchG));
-    joint(at(box(0.05, 0.012, 0.012, ledMat, 0.003), -0.05, 0.035, -0.086, this.pitchG));
-    this.lens(0.085, 0.048, 0.07, lensMat, this.pitchG);
-  }
-
-  private buildSentinel(lensMat: THREE.Material, ledMat: THREE.Material): void {
-    const r = this.root;
-    at(hexX(0.3, 0.05, GEN.gunmetalDark), 0, 0, 0, r);
-    at(hexX(0.24, 0.16, GEN.gunmetal), 0, 0.05, 0, r);
-    joint(at(hexX(0.246, 0.016, GEN.trim), 0, 0.195, 0, r));
-    joint(at(hexX(0.243, 0.01, ledMat), 0, 0.12, 0, r));
-    // heat sinks bolted to the two side flats (fire rate)
-    const flat = hexFlat(0.24);
-    for (const sx of [-1, 1]) {
-      at(box(0.04, 0.13, 0.15, GEN.armor, 0.008), sx * (flat + 0.02), 0.065, 0, r);
-      for (let i = 0; i < 5; i++) at(box(0.08, 0.12, 0.012, GEN.fin, 0.003), sx * (flat + 0.04 + 0.04), 0.07, -0.06 + i * 0.03, r);
+  private build(irisMat: THREE.Material, seamMat: THREE.Material): void {
+    const r = this.root, T = this.tier;
+    // body
+    let neckY: number;
+    if (T === 1) {
+      at(hexX(0.2, 0.07, GEN.gunmetal), 0, 0, 0, r);
+      joint(at(hexX(0.205, 0.012, GEN.trim), 0, 0.058, 0, r));
+      neckY = 0.07;
+    } else {
+      const big = T === 3;
+      const baseR = big ? 0.38 : 0.3, bodyR = big ? 0.29 : 0.24, bodyH = big ? 0.16 : 0.14;
+      at(hexX(baseR, 0.05, GEN.gunmetalDark), 0, 0, 0, r);
+      if (big) joint(at(hexX(baseR + 0.005, 0.012, GEN.trim), 0, 0.04, 0, r));
+      at(hexX(bodyR, bodyH, GEN.gunmetal), 0, 0.05, 0, r);
+      joint(at(hexX(bodyR + 0.006, 0.014, GEN.trim), 0, 0.05 + bodyH - 0.014, 0, r));
+      for (const y of big ? [0.09, 0.15] : [0.11]) joint(at(hexX(bodyR + 0.003, 0.008, seamMat), 0, y, 0, r));
+      // heat sinks on the side flats (Mk II), grown into liquid-cooled radiators (Mk III)
+      const flat = hexFlat(bodyR), fins = big ? 7 : 5, bw = big ? 0.05 : 0.04, fh = big ? 0.12 : 0.1;
+      for (const sx of [-1, 1]) {
+        at(box(bw, fh + 0.01, big ? 0.18 : 0.15, GEN.armor, 0.008), sx * (flat + bw / 2), 0.06, 0, r);
+        for (let i = 0; i < fins; i++) at(box(0.08, fh, 0.012, GEN.fin, 0.003), sx * (flat + bw + 0.04), 0.065, (big ? -0.075 : -0.06) + i * (big ? 0.025 : 0.03), r);
+        if (big) joint(at(box(0.006, fh, 0.006, seamMat, 0.002), sx * (flat + bw / 2), 0.065, 0.092, r));
+      }
+      neckY = 0.05 + bodyH;
     }
-    at(cyl(0.1, 0.035, GEN.trim), 0, 0.21, 0, r);
-    at(this.yawG, 0, 0.245, 0, r);
-    at(box(0.29, 0.035, 0.1, GEN.armor, 0.008), 0, 0, 0, this.yawG);
-    for (const sx of [-1, 1]) at(box(0.03, 0.2, 0.09, GEN.armor, 0.008), sx * 0.16, 0, 0, this.yawG);
-    at(this.pitchG, 0, 0.135, 0, this.yawG);
-    at(box(0.26, 0.15, 0.22, GEN.gunmetal, 0.016), 0, -0.075, 0, this.pitchG);
-    joint(at(axle(0.022, 0.33, GEN.trim), 0, 0, 0, this.pitchG));
-    at(box(0.2, 0.025, 0.12, GEN.armor, 0.006), 0, 0.075, 0.05, this.pitchG); // hood
-    joint(at(box(0.07, 0.014, 0.012, ledMat, 0.003), -0.06, 0.03, -0.112, this.pitchG));
-    this.lens(0.11, 0.065, 0.1, lensMat, this.pitchG, true);
-    // first side sensor pod, on an arm off the right yoke plate
-    at(box(0.06, 0.03, 0.04, GEN.armor, 0.006), 0.205, 0.135, 0, this.yawG);
-    const pod = at(new THREE.Group(), 0.27, 0.15, 0, this.yawG);
-    at(box(0.07, 0.06, 0.08, GEN.gunmetal, 0.01), 0, -0.03, 0, pod);
-    at(barrel(0.02, 0.035, GEN.gunmetalDark), 0, 0, 0.04, pod);
-    joint(at(barrel(0.015, 0.008, lensMat), 0, 0, 0.07, pod));
-    this.pod = { g: pod, yaw: new Spring(), gaze: 0 };
-  }
+    const neckR = [0.075, 0.1, 0.12][T - 1], neckH = [0.03, 0.03, 0.035][T - 1];
+    at(cyl(neckR, neckH, GEN.trim), 0, neckY, 0, r);
+    at(this.head, 0, neckY + neckH, 0, r);
 
-  private buildArray(lensMat: THREE.Material, ledMat: THREE.Material): void {
-    const r = this.root;
-    // ceramic plinth with an inlaid light ring
-    at(prism(8, 0.44, 0.06, GEN.ceramic), 0, 0, 0, r);
-    joint(at(new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.005, 6, 8).rotateX(Math.PI / 2).rotateY(Math.PI / 8), ledMat), 0, 0.062, 0, r));
-    // drone docks: three charging cradles
-    const docks: THREE.Vector3[] = [];
-    for (let k = 0; k < 3; k++) {
-      const a = Math.PI + (k * Math.PI * 2) / 3;
-      const p = new THREE.Vector3(Math.sin(a) * 0.33, 0.06, Math.cos(a) * 0.33);
-      at(cyl(0.065, 0.025, GEN.ceramicEdge), p.x, p.y, p.z, r);
-      joint(at(ring_(0.045, 0.005, ledMat), p.x, p.y + 0.026, p.z, r));
-      docks.push(p.clone().setY(p.y + 0.027));
+    // helmet with the eye socket in its front, tilted up so the eye reads from above
+    const hw = [0.22, 0.3, 0.36][T - 1], hh = [0.15, 0.19, 0.22][T - 1], hd = [0.2, 0.26, 0.3][T - 1];
+    at(box(hw, hh, hd, GEN.armor, [0.05, 0.06, 0.07][T - 1]), 0, 0, 0, this.head);
+    const eyeR = [0.052, 0.068, 0.082][T - 1];
+    this.eye = new Eye(eyeR, irisMat, T === 3);
+    at(this.eye.socket, 0, hh * 0.6, hd / 2 - eyeR * 0.45, this.head);
+    this.eye.socket.rotation.x = -0.5;
+    if (T >= 2) {
+      // brow plate: gives it a heavier, watchful squint
+      at(box(hw * 0.88, 0.035, 0.09, GEN.gunmetal, 0.01), 0, hh - 0.002, hd / 2 - 0.035, this.head);
+      // mechanical iris ring around the socket (turns while it focuses)
+      const ringG = new THREE.Group();
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; const b = joint(box(0.018, 0.012, 0.01, GEN.trim, 0.003)); b.position.set(Math.cos(a) * eyeR * 1.42, Math.sin(a) * eyeR * 1.42 - 0.006, 0); b.rotation.z = a; ringG.add(b); }
+      this.eye.socket.add(ringG);
+      this.irisRing = ringG;
     }
-    // body; the Mk II heat sinks have evolved into liquid-cooled exchange panels
-    at(hexX(0.25, 0.14, GEN.ceramic), 0, 0.06, 0, r);
-    joint(at(hexX(0.255, 0.012, GEN.ceramicEdge), 0, 0.19, 0, r));
-    const flat = hexFlat(0.25);
-    for (const sx of [-1, 1]) {
-      at(box(0.03, 0.12, 0.16, GEN.ceramicEdge, 0.008), sx * (flat + 0.015), 0.07, 0, r);
-      for (const z of [-0.05, 0, 0.05]) joint(at(box(0.005, 0.1, 0.01, ledMat, 0.002), sx * (flat + 0.032), 0.08, z, r));
-    }
-    // slim column with light inlays
-    at(cyl(0.12, 0.2, GEN.ceramic), 0, 0.2, 0, r);
-    for (const a of [-0.6, 0, 0.6]) joint(at(box(0.006, 0.17, 0.006, ledMat, 0.002), Math.sin(a) * 0.121, 0.215, Math.cos(a) * 0.121, r));
-    at(cyl(0.13, 0.02, GEN.ceramicEdge), 0, 0.4, 0, r);
-    // gimballed sensor dome with a compound eye and a sweeping scan band
-    at(this.yawG, 0, 0.42, 0, r);
-    at(cyl(0.1, 0.025, GEN.ceramicEdge), 0, 0, 0, this.yawG);
-    for (const sx of [-1, 1]) at(box(0.025, 0.22, 0.06, GEN.ceramic, 0.008), sx * 0.168, 0.025, 0, this.yawG);
-    at(this.pitchG, 0, 0.175, 0, this.yawG);
-    const dome = at(new THREE.Mesh(new THREE.SphereGeometry(0.14, 32, 20), GEN.darkGlass), 0, 0, 0, this.pitchG);
-    dome.castShadow = true;
-    joint(at(axle(0.02, 0.34, GEN.ceramicEdge), 0, 0, 0, this.pitchG));
-    const facets = [[0, 0], [0.3, 0], [-0.3, 0], [0.15, 0.26], [-0.15, 0.26], [0.15, -0.26], [-0.15, -0.26]];
-    for (const [ax, ay] of facets) {
-      const d = new THREE.Vector3(Math.sin(ax), Math.sin(ay), 1).normalize();
-      for (const [rad, mat, out] of [[0.042, GEN.ceramicEdge, 0.131], [0.034, lensMat, 0.139]] as const) {
-        const f = joint(new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, 0.012, 6), mat));
-        f.position.copy(d).multiplyScalar(out);
-        f.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
-        this.pitchG.add(f);
+    if (T === 3) {
+      joint(at(ring_(eyeR * 1.42, 0.02, GEN.trim), 0, 0, -0.005, this.eye.socket));
+      joint(at(box(hw * 0.66, 0.006, 0.01, seamMat, 0.002), 0, hh - 0.016, hd / 2 + 0.012, this.head));
+      for (const sx of [-1, 1]) {
+        at(box(0.02, 0.1, 0.06, GEN.gunmetal, 0.005), sx * 0.1, hh, -hd * 0.32, this.head);
+        at(new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), seamMat), sx * 0.1, hh + 0.105, -hd * 0.32, this.head);
       }
     }
-    this.scanBand = joint(at(new THREE.Mesh(new THREE.TorusGeometry(0.146, 0.004, 6, 48), ledMat), 0, 0, 0, this.pitchG));
-    at(this.lensTip, 0, 0, 0.15, this.pitchG);
-    // emitter spike on the right fork
-    at(cyl(0.008, 0.13, GEN.trim), 0.168, 0.245, 0, this.yawG);
-    at(new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), ledMat), 0.168, 0.38, 0, this.yawG);
-    // drones
-    const tetherMat = new THREE.MeshBasicMaterial({ color: ROLE.dmg.clone().multiplyScalar(1.6), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
-    for (const dock of docks) {
-      const g = at(new THREE.Group(), dock.x, dock.y, dock.z, r);
-      at(hexX(0.05, 0.03, GEN.ceramic), 0, 0, 0, g);
-      joint(at(hexX(0.034, 0.01, GEN.ceramicEdge), 0, 0.03, 0, g));
-      joint(at(ring_(0.03, 0.006, ledMat), 0, 0.002, 0, g));
-      const lens = at(new THREE.Object3D(), 0, 0.016, 0.078, g);
-      at(barrel(0.014, 0.025, GEN.gunmetalDark), 0, 0.016, 0.049, g);
-      joint(at(barrel(0.011, 0.006, lensMat), 0, 0.016, 0.07, g));
-      const tether = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6), tetherMat.clone());
-      tether.castShadow = false;
-      r.add(tether);
-      this.drones.push({ g, dock, lift: 0, yaw: new Spring(), tether, lens, cd: Math.random() });
+
+    // spherical eye-pods in cups on the helmet: one at Mk II, three that fly at Mk III
+    const cups: [number, number, number, 'side' | 'top'][] = T === 2 ? [[hw / 2 + 0.012, hh * 0.5, 0.02, 'side']]
+      : T === 3 ? [[-(hw / 2 + 0.014), hh * 0.5, 0.02, 'side'], [hw / 2 + 0.014, hh * 0.5, 0.02, 'side'], [0, hh + 0.012, -hd * 0.08, 'top']] : [];
+    for (const [cx, cy, cz, kind] of cups) {
+      const podR = T === 3 ? 0.04 : 0.036;
+      const cup = new THREE.Group();
+      at(cup, cx, cy, cz, this.head);
+      const bowl = new THREE.Mesh(new THREE.SphereGeometry(podR * 1.22, 20, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#2a323b', metalness: 0.6, roughness: 0.35, side: THREE.DoubleSide }));
+      if (kind === 'side') bowl.rotation.z = cx > 0 ? Math.PI / 2 : -Math.PI / 2;
+      joint(bowl).castShadow = true;
+      cup.add(bowl);
+      const g = new THREE.Group();
+      joint(at(new THREE.Mesh(new THREE.SphereGeometry(podR, 24, 16), GEN.armor), 0, 0, 0, g)).castShadow = true;
+      joint(at(new THREE.Mesh(new THREE.SphereGeometry(podR * 0.66, 20, 12), GEN.darkGlass), 0, 0, podR * 0.5, g));
+      joint(at(new THREE.Mesh(new THREE.TorusGeometry(podR * 0.36, podR * 0.1, 8, 24), irisMat), 0, 0, podR * 1.06, g));
+      if (T === 3) joint(at(ring_(podR * 1.01, podR * 0.06, seamMat), 0, 0, 0, g));
+      const pupil = at(new THREE.Object3D(), 0, 0, podR * 1.2, g);
+      const flies = T === 3;
+      if (flies) r.add(g); else cup.add(g);
+      let field: LightField | null = null;
+      field = new LightField(ROLE.dmg, FIELD_STYLE.drone);
+      r.add(field.group);
+      this.pods.push({ g, cup, yaw: new Spring(), pitch: new Spring(), lift: 0, field, pupil, tick: Math.random() * 0.4, flies, gaze: 0 });
     }
+  }
+
+  private local(o: THREE.Object3D, out = new THREE.Vector3()): THREE.Vector3 {
+    return o.getWorldPosition(out).sub(this.root.position);
   }
 
   protected animate(dt: number, t: number, targets: THREE.Vector3[]): void {
     const target = targets[0] ?? null;
     this.locks.length = 0;
-    // gaze: glances while idle, hard lock when alert
+    const root = this.root.position;
+    // where to look: the hostile, or a nervous glance somewhere
     if (target) {
-      this.gaze = this.yawTo(this.yawG, target);
-      this.yawG.getWorldPosition(tmp);
-      this.gazePitch = Math.atan2(tmp.y + 0.12 - target.y, Math.hypot(target.x - tmp.x, target.z - tmp.z));
+      this.look = Math.atan2(target.x - root.x, target.z - root.z);
+      this.lookPitch = 0.25;
+      if (!this.hadTarget) this.surprise = 0.35; // lids snap wide on first sight
+      this.searchUntil = t + 1.6;
     } else if (t >= this.nextGlance) {
+      const searching = t < this.searchUntil;
       const double = Math.random() < 0.3;
-      this.gaze = (Math.random() * 2 - 1) * 1.35;
-      this.gazePitch = -0.1 + Math.random() * 0.35;
-      this.nextGlance = t + (double ? 0.18 + Math.random() * 0.15 : 0.6 + Math.random() * 1.3);
+      this.look = this.headYaw.x + (Math.random() * 2 - 1) * (searching ? 1.6 : 1.1);
+      this.lookPitch = -0.15 + Math.random() * 0.4;
+      this.nextGlance = t + (searching ? 0.25 + Math.random() * 0.25 : double ? 0.2 : 0.6 + Math.random() * 1.4);
     }
-    const [k, c] = target ? [420, 30] : [170, 13];
-    this.yawG.rotation.y = this.yaw.step(this.gaze, k, c, dt);
-    this.pitchG.rotation.x = this.pitch.step(this.gazePitch, k * 0.8, c, dt, false);
-    const onTarget = target && Math.abs(wrap(this.gaze - this.yaw.x)) < 0.12;
-    if (onTarget) this.locks.push(target!);
-    // focus: the iris closes down while locked, the focus ring turns
-    this.focus += ((onTarget ? 1 : 0) - this.focus) * Math.min(1, dt * 8);
-    if (this.iris) this.iris.scale.setScalar(1 - this.focus * 0.45);
-    if (this.focusRing) this.focusRing.rotation.z += dt * this.focus * 6;
-    if (this.scanBand) { this.scanBand.rotation.y = Math.sin(t * (target ? 4 : 1.4)) * 1.2; }
-    // bursts
-    if (onTarget && this.burstLeft === 0 && this.cooldown <= 0 && this.focus > 0.7) { this.burstLeft = [2, 3, 4][this.tier - 1]; this.burstT = 0; }
-    if (this.burstLeft > 0) {
-      this.burstT -= dt;
-      if (this.burstT <= 0 && target) {
-        this.burstLeft--;
-        this.burstT = 0.075;
-        this.flash = 1;
-        this.onFire?.({ from: this.lensTip.getWorldPosition(new THREE.Vector3()), to: target.clone(), kind: 'beam', color: ROLE.dmg });
-        if (this.burstLeft === 0) this.cooldown = [0.9, 0.75, 0.6][this.tier - 1];
-      } else if (!target) this.burstLeft = 0;
+    this.hadTarget = !!target;
+    // eyes lead, the head follows slowly
+    this.head.rotation.y = this.headYaw.step(this.look, target ? 22 : 9, target ? 9 : 6, dt);
+    const eyeYaw = wrap(this.look - this.head.rotation.y);
+    this.surprise = Math.max(0, this.surprise - dt);
+    // blinks: quick, sometimes doubled; not while focused
+    if (!target && t >= this.nextBlink) { this.blinkT = 0; this.nextBlink = t + (Math.random() < 0.25 ? 0.3 : 2 + Math.random() * 3); }
+    let open = target ? (this.surprise > 0 ? 1 : 0.6) : 0.45;
+    if (this.blinkT >= 0) { this.blinkT += dt; open = this.blinkT < 0.07 ? 0 : open; if (this.blinkT > 0.14) this.blinkT = -1; }
+    const locked = !!target && Math.abs(eyeYaw) < 0.75 && Math.abs(wrap(this.look - this.head.rotation.y - this.eye.yaw.x)) < 0.18;
+    this.eye.pose(dt, eyeYaw, -this.lookPitch + 0.5, open, locked ? 0.72 : 1, !!target);
+    if (this.irisRing) this.irisRing.rotation.z += dt * (locked ? 3 : 0.3);
+
+    // the light field: on while locked, eased in and out
+    this.field.intensity += ((locked ? 1 : 0) - this.field.intensity) * Math.min(1, dt * (locked ? 6 : 4));
+    const eyePos = this.local(this.eye.pupil);
+    if (target) this.field.update(eyePos, tmp.copy(target).sub(root), t); else this.field.update(eyePos, eyePos, t);
+    if (locked && target) {
+      this.locks.push(target);
+      this.tick -= dt;
+      if (this.tick <= 0 && this.field.intensity > 0.6) {
+        this.tick = [0.3, 0.22, 0.16][this.tier - 1];
+        this.flash = 0.5;
+        this.onFire?.({ from: eyePos.clone().add(root), to: target.clone(), kind: 'field', color: ROLE.dmg, tier: this.tier });
+      }
     }
-    // Mk II side pod: its own glances when idle, follows the head's target when alert
-    if (this.pod) {
-      const p = this.pod;
-      if (target) p.gaze = this.yawTo(p.g, target) - this.yaw.x;
-      else if (Math.random() < dt * 0.8) p.gaze = (Math.random() * 2 - 1) * 1.2;
-      p.g.rotation.y = p.yaw.step(p.gaze, 260, 18, dt);
-    }
-    // Mk III drones: lift off when alert, each watches a different hostile
-    this.drones.forEach((d, i) => {
-      d.lift += ((this.alert > 0.5 ? 1 : 0) - d.lift) * Math.min(1, dt * 1.8);
-      const e = d.lift * d.lift * (3 - 2 * d.lift);
-      const ang = Math.atan2(d.dock.x, d.dock.z) + Math.sin(t * 0.6 + i * 2.1) * 0.25 * e;
-      const rad = 0.33 + 0.18 * e;
-      d.g.position.set(Math.sin(ang) * rad, d.dock.y + e * (0.5 + 0.035 * Math.sin(t * 2.3 + i)), Math.cos(ang) * rad);
+
+    // eye-pods
+    this.pods.forEach((p, i) => {
       const tg = targets.length ? targets[i % targets.length] : null;
-      const want = tg ? this.yawTo(d.g, tg) : (e > 0.05 ? Math.sin(t * 0.9 + i * 2) * 1.5 : ang);
-      d.g.rotation.y = d.yaw.step(want, 200, 16, dt);
-      // tether from the dock to the drone
-      const a = d.dock, b = d.g.position;
-      d.tether.position.copy(a).add(b).multiplyScalar(0.5);
-      d.tether.scale.set(1, Math.max(0.001, a.distanceTo(b)), 1);
-      d.tether.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tmp.copy(b).sub(a).normalize());
-      (d.tether.material as THREE.MeshBasicMaterial).opacity = e > 0.05 ? e * (0.55 + 0.25 * Math.sin(t * 20 + i)) : 0;
-      d.cd -= dt;
-      if (tg && e > 0.9 && d.cd <= 0) {
-        d.cd = 0.8 + Math.random() * 0.3;
-        this.locks.push(tg);
-        this.onFire?.({ from: d.lens.getWorldPosition(new THREE.Vector3()), to: tg.clone(), kind: 'beam', color: ROLE.dmg });
+      if (p.flies) {
+        p.lift += ((this.alert > 0.5 ? 1 : 0) - p.lift) * Math.min(1, dt * 1.6);
+        const e = p.lift * p.lift * (3 - 2 * p.lift);
+        const dock = this.local(p.cup);
+        const base = Math.atan2(dock.x, dock.z || 0.001) + (i - 1) * 0.5;
+        const toward = tg ? Math.atan2(tg.x - root.x, tg.z - root.z) : base;
+        const ang = toward + (i - 1) * 0.9 + Math.sin(t * 0.7 + i * 2) * 0.2;
+        const hover = new THREE.Vector3(Math.sin(ang) * 0.58, 0.62 + 0.04 * Math.sin(t * 2.2 + i * 1.7), Math.cos(ang) * 0.58);
+        p.g.position.lerpVectors(dock, hover, e);
+      }
+      const pp = this.local(p.g);
+      let gy: number, gp: number;
+      if (tg) { gy = Math.atan2(tg.x - root.x - pp.x, tg.z - root.z - pp.z); gp = Math.atan2(pp.y - tg.y, Math.hypot(tg.x - root.x - pp.x, tg.z - root.z - pp.z)); }
+      else { if (Math.random() < dt * 0.9) p.gaze = this.head.rotation.y + (Math.random() * 2 - 1) * 1.4; gy = p.gaze; gp = 0.15; }
+      const parentYaw = p.flies ? 0 : this.head.rotation.y;
+      p.g.rotation.y = p.yaw.step(gy - parentYaw, 300, 20, dt);
+      p.g.rotation.x = p.pitch.step(gp, 300, 20, dt, false);
+      const aimed = !!tg && (!p.flies || p.lift > 0.85) && Math.abs(wrap(gy - parentYaw - p.yaw.x)) < 0.2;
+      if (p.field) {
+        p.field.intensity += ((aimed ? 1 : 0) - p.field.intensity) * Math.min(1, dt * 5);
+        const from = this.local(p.pupil);
+        p.field.update(from, tg ? tmp.copy(tg).sub(root) : from, t + i);
+        p.tick -= dt;
+        if (aimed && tg && p.tick <= 0 && p.field.intensity > 0.6) {
+          p.tick = 0.45;
+          this.onFire?.({ from: from.clone().add(root), to: tg.clone(), kind: 'field', color: ROLE.dmg, tier: 1 });
+        }
       }
     });
   }

@@ -11,7 +11,9 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { buildTower, type FireEvent, type Stage, type Tower3D } from '../../src/render3d/towers';
+import { buildTower, type FireEvent, type Stage } from '../../src/render3d/towers';
+import { buildTower as buildR5 } from '../../src/render3d/legacy/r5';
+import { buildTower as buildR4 } from '../../src/render3d/legacy/r4';
 import { GEN, ROLE, box, contactShadow, findClipping, glow, lightPool } from '../../src/render3d/kit';
 import { showCompromised } from './compromised';
 
@@ -21,6 +23,26 @@ const LINEAGES: Record<Lineage, { label: string; color: string; redone: boolean;
   limiter: { label: 'RATE LIMITER', color: '#a58bff', redone: false, stages: [['mk1', 'MK I', 'GATE'], ['mk2', 'MK II', 'CLAMP'], ['mk3', 'MK III', 'CHOKEPOINT']] },
   sandbox: { label: 'SANDBOX', color: '#35e0b2', redone: false, stages: [['mk1', 'MK I', 'CELL'], ['mk2', 'MK II', 'VAULT'], ['cluster1', 'CLUSTER I', '4 PODS'], ['cluster2', 'CLUSTER II', '6 PODS'], ['remote1', 'REMOTE I', 'RELAY'], ['remote2', 'REMOTE II', 'UPLINK']] },
 };
+/* Older rounds stay viewable for comparison, behind the ⋯ menu. */
+type Version = 'current' | 'r5' | 'r4';
+const VERSIONS: Record<Lineage, { id: Version | '2d'; label: string }[]> = {
+  inspector: [{ id: 'current', label: 'Current (round 6)' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
+  limiter: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
+  sandbox: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
+};
+let version: Version = 'current';
+/** What the lab needs from any tower, whichever round it comes from. */
+interface LabTower { root: THREE.Group; range: number; locks: THREE.Vector3[]; onFire: ((e: FireEvent) => void) | null; update(dt: number, t: number, targets: THREE.Vector3[]): void }
+function makeTower(kind: Lineage, stage: Stage): LabTower {
+  if (version === 'r5') return buildR5(kind, stage) as unknown as LabTower;
+  if (version === 'r4') {
+    const old = buildR4(kind, stage);
+    const w: LabTower = { root: old.root, range: old.range, locks: [], onFire: null, update: (dt, t, ts) => old.update(dt, t, ts[0] ?? null) };
+    old.onFire = (e) => w.onFire?.(e);
+    return w;
+  }
+  return buildTower(kind, stage) as unknown as LabTower;
+}
 const params = new URLSearchParams(location.search);
 let lineage: Lineage = (params.get('lineage') as Lineage) || 'inspector';
 const CHECK = params.has('check');
@@ -74,7 +96,7 @@ composer.addPass(new OutputPass());
 /* ------------------------------------------------------- per-lineage world */
 let world = new THREE.Group();
 scene.add(world);
-interface Slot { tower: Tower3D; name: string; nick: string; x: number; z: number }
+interface Slot { tower: LabTower; name: string; nick: string; x: number; z: number }
 let slots: Slot[] = [];
 let BW = 9, BD = 5.4;
 const TRACK_Z = 1.45, WALL_Z = -1.2, TUNNEL_Z = -2.05;
@@ -166,7 +188,7 @@ function buildWorld(): void {
   // towers
   slots.forEach((s) => s.tower.root.parent?.remove(s.tower.root));
   slots = L.stages.map(([stage, name, nick], i) => {
-    const tower = buildTower(lineage, stage);
+    const tower = makeTower(lineage, stage);
     const x = (i - (n - 1) / 2) * spacing;
     tower.root.position.set(x, 0, 0);
     world.add(tower.root);
@@ -182,7 +204,9 @@ function buildWorld(): void {
     labelsEl.append(el);
     return el;
   });
-  document.getElementById('note')!.textContent = L.redone ? '' : 'NOT REDONE YET · OLD MODELS';
+  const vLabel = VERSIONS[lineage].find((x) => x.id === version)?.label ?? '';
+  document.getElementById('note')!.textContent = version !== 'current' ? `COMPARING · ${vLabel.toUpperCase()}` : L.redone ? '' : 'NOT REDONE YET · OLD MODELS';
+  renderVersionMenu();
   packets.forEach((p, i) => { p.dist = (i / packets.length) * total; });
   focusGoal.copy(HOME); zoomGoal = 1;
   resize();
@@ -196,7 +220,7 @@ function buildWorld(): void {
 // Invincible: hits strip layers, layers regrow, nothing dies. Shows layered health without emptying the board.
 interface Packet { g: THREE.Group; core: THREE.Mesh; coreMat: THREE.MeshStandardMaterial; shells: THREE.Mesh[]; mats: THREE.MeshStandardMaterial[]; shadow: THREE.Mesh; pool: THREE.Mesh; layers: number; hits: number; regrow: number; dist: number; pos: THREE.Vector3 }
 const packets: Packet[] = [];
-for (let i = 0; i < 3; i++) {
+for (let i = 0; i < 1; i++) {
   const g = new THREE.Group();
   const coreMat = glow(ROLE.hot, 3.2);
   const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.055, 0), coreMat);
@@ -225,6 +249,10 @@ function nearestPacket(p: THREE.Vector3): Packet | null {
 function onFire(e: FireEvent): void {
   const to = e.to.clone();
   const pk = nearestPacket(to);
+  if (e.kind === 'field') {
+    if (pk) { hit(pk, 1); burstShards(pk.pos, (e.tier ?? 1) + 1); }
+    return;
+  }
   if (e.kind === 'beam') {
     const len = e.from.distanceTo(to);
     const m = additive(e.color.clone().multiplyScalar(2.2));
@@ -343,10 +371,40 @@ document.querySelectorAll<HTMLButtonElement>('[data-lineage]').forEach((b) => {
   b.classList.toggle('on', b.dataset.lineage === lineage);
   b.addEventListener('click', () => {
     lineage = b.dataset.lineage as Lineage;
+    version = 'current';
     document.querySelectorAll('[data-lineage]').forEach((x) => x.classList.toggle('on', x === b));
     buildWorld();
   });
 });
+
+/* ------------------------------------------------------------ compare menu */
+const menu = $('vermenu');
+$('more').addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('open'); });
+addEventListener('click', () => menu.classList.remove('open'));
+menu.addEventListener('click', (e) => e.stopPropagation());
+function renderVersionMenu(): void {
+  menu.innerHTML = `<div class="vm-h">COMPARE ${LINEAGES[lineage].label} MODELS</div>`;
+  for (const v of VERSIONS[lineage]) {
+    const b = document.createElement('button');
+    b.className = `vm-i${v.id === version ? ' on' : ''}`;
+    b.textContent = v.label;
+    b.addEventListener('click', () => {
+      menu.classList.remove('open');
+      if (v.id === '2d') { open2d(); return; }
+      version = v.id;
+      buildWorld();
+    });
+    menu.append(b);
+  }
+}
+$('close2d').addEventListener('click', () => $('frames2d').classList.remove('open'));
+/** The 2D sheet is drawn for 1280x720; scale it to fit whatever screen this is. */
+function open2d(): void {
+  const f = $('frames2d').querySelector('iframe') as HTMLIFrameElement;
+  const k = Math.min(innerWidth / 1280, innerHeight / 720);
+  Object.assign(f.style, { width: '1280px', height: '720px', transform: `scale(${k})`, transformOrigin: '0 0', position: 'absolute', left: `${(innerWidth - 1280 * k) / 2}px`, top: `${(innerHeight - 720 * k) / 2}px` });
+  $('frames2d').classList.add('open');
+}
 
 /* ------------------------------------------------------------------ labels */
 const labelsEl = $('labels');
