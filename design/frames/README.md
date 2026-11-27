@@ -16,3 +16,7 @@ All three share the same structure: top strip (menu, pause, speed, sector, next 
 ## Round 3: tower tiers
 
 `v3-towers.html` (render: `v3-towers.png`, 1280x720): every tier rebuilds the structure. Footprint grows from a small unit to a full cell, height roughly 2.5x, materials go bare > plated > reinforced, modules attach physically (fins, clamp arms, pods on arms, pylons, satellites on pipes, lattice uplink), and the number of lit parts grows. Includes an actual-size strip (32 px cells) and a small in-context board.
+
+## Round 4: Tower Lab (live 3D)
+
+`../lab.html`: the towers as real three.js models with idle/alert behavior, a looping test packet, turntable, tap-to-zoom, FPS readout, and the SYSTEM COMPROMISED defeat screen.

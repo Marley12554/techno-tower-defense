@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0c0f" />
+<title>Tower Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --mono: 'IBM Plex Mono', ui-monospace, monospace; --cond: 'IBM Plex Sans Condensed', 'IBM Plex Mono', sans-serif;
+    --bg: #0a0c0f; --raised-a: #181c22; --raised-b: #121519; --inset: #08090c; --edge: #252b33; --edge2: #323a44; --hi: rgba(255,255,255,0.07);
+    --ink: #e2e9f0; --dim: #7a8592; --mute: #4c5662; --ice: #cfe6ff; --dmg: #46c8ff; --area: #35e0b2; --sup: #a58bff; --hot: #ff4d4f;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--mono); touch-action: none; user-select: none; -webkit-user-select: none; }
+  canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .bar { position: fixed; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); top: max(8px, env(safe-area-inset-top)); display: flex; align-items: center; gap: 8px; pointer-events: none; }
+  .bar > * { pointer-events: auto; }
+  .title { display: flex; flex-direction: column; line-height: 1.2; margin-right: auto; }
+  .title b { font-family: var(--cond); font-weight: 600; font-size: 13px; letter-spacing: 1.8px; }
+  .title span { font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+  .btn { height: 32px; padding: 0 12px; display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.3px; color: var(--ink); cursor: pointer;
+    background: linear-gradient(180deg, var(--raised-a), var(--raised-b)); border: 1px solid var(--edge); box-shadow: inset 0 1px 0 var(--hi), 0 2px 6px rgba(0,0,0,0.45); position: relative; }
+  .btn:hover { border-color: color-mix(in srgb, var(--ice) 60%, var(--edge)); }
+  .btn:active { background: linear-gradient(180deg, #101317, #14181d); box-shadow: inset 0 2px 4px rgba(0,0,0,0.6); transform: translateY(1px); }
+  .btn.on { border-color: color-mix(in srgb, var(--ice) 55%, var(--edge)); color: var(--ice); }
+  .btn.on::before { content: ''; position: absolute; left: 6px; right: 6px; top: -1px; height: 1px; background: linear-gradient(90deg, transparent, var(--ice), transparent); }
+  .btn.danger { border-color: color-mix(in srgb, var(--hot) 55%, var(--edge)); color: #ffb3b3; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mute); }
+  .on .dot { background: var(--hot); box-shadow: 0 0 6px var(--hot); }
+  .labels { position: fixed; inset: 0; pointer-events: none; }
+  .lbl { position: absolute; transform: translate(-50%, 0); text-align: center; white-space: nowrap; }
+  .lbl b { display: block; font-size: 9px; letter-spacing: 1.2px; font-weight: 600; }
+  .lbl span { font-size: 7.5px; color: var(--dim); letter-spacing: 1px; }
+  .lbl.row b { font-family: var(--cond); font-size: 11px; letter-spacing: 1.6px; }
+  .hint { position: fixed; left: 50%; bottom: max(8px, env(safe-area-inset-bottom)); transform: translateX(-50%); font-size: 9px; color: var(--mute); letter-spacing: 1px; pointer-events: none; white-space: nowrap; }
+  .atmo { position: fixed; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, transparent 1px 3px), radial-gradient(ellipse at 50% 50%, transparent 60%, rgba(0,0,0,0.5)); }
+  @media (max-width: 700px) { .title span { font-size: 8px; } .btn { padding: 0 8px; font-size: 8.5px; } }
+</style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="labels" id="labels"></div>
+  <div class="atmo"></div>
+  <div class="bar">
+    <div class="title"><b>TOWER LAB</b><span>LIVE 3D · IDLE / ALERT BEHAVIOR · NOT THE GAME · <i id="fps" style="font-style:normal">-- FPS</i></span></div>
+    <button class="btn on" id="hostiles"><span class="dot"></span>HOSTILES</button>
+    <button class="btn" id="turn">TURNTABLE</button>
+    <button class="btn" id="slow">SLOW-MO</button>
+    <button class="btn danger" id="gameover">GAME OVER</button>
+  </div>
+  <div class="hint" id="hint">Tap a tower to zoom in · tap empty board to zoom out · drag to rotate · pinch or scroll to zoom</div>
+  <script type="module" src="./lab/main.ts"></script>
+</body>
+</html>

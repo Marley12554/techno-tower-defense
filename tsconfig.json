@@ -14,5 +14,5 @@
     "types": ["vite/client"],
     "paths": { "@engine/*": ["engine/src/*"] }
   },
-  "include": ["engine", "src", "test", "scripts", "levels"]
+  "include": ["engine", "src", "test", "scripts", "levels", "design"]
 }
