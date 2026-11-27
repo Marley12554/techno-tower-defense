@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Style frames v2</title>
+<!--
+  Round 2: C palette, B atmosphere (toned down), depth (tilted top-down volume, materials, light), role colors.
+  ?view=board|towers|ui
+-->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --mono: 'IBM Plex Mono', ui-monospace, monospace; --cond: 'IBM Plex Sans Condensed', 'IBM Plex Mono', sans-serif;
+    --bg: #0a0c0f; --base: #0f1216; --raised-a: #181c22; --raised-b: #121519; --inset: #08090c;
+    --edge: #252b33; --edge2: #323a44; --hi: rgba(255,255,255,0.07);
+    --ink: #e2e9f0; --dim: #7a8592; --mute: #4c5662;
+    --ice: #cfe6ff; --dmg: #46c8ff; --area: #35e0b2; --sup: #a58bff; --hot: #ff4d4f; --warn: #ffa940;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--mono); }
+  #stage { position: absolute; inset: 0; }
+  #stage > canvas { position: absolute; inset: 0; }
+
+  /* surfaces: base, raised, inset */
+  .raised { background: linear-gradient(180deg, var(--raised-a), var(--raised-b)); border: 1px solid var(--edge); box-shadow: inset 0 1px 0 var(--hi), 0 2px 6px rgba(0,0,0,0.45); }
+  .inset { background: var(--inset); border: 1px solid #14181d; box-shadow: inset 0 1px 3px rgba(0,0,0,0.7); }
+
+  .top { position: absolute; left: 8px; top: 7px; right: 220px; height: 32px; display: flex; align-items: center; gap: 6px; }
+  .sq { width: 32px; height: 32px; display: grid; place-items: center; color: var(--ink); }
+  .sq svg { width: 14px; height: 14px; }
+  .sq.on { border-color: color-mix(in srgb, var(--ice) 55%, var(--edge)); color: var(--ice); }
+  .sector { margin-left: 8px; display: flex; flex-direction: column; line-height: 1.2; }
+  .sector b { font-family: var(--cond); font-weight: 600; font-size: 12px; letter-spacing: 1.5px; }
+  .sector span { font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+  .sector span i { font-style: normal; color: var(--hot); }
+  .spacer { flex: 1; }
+  .next { display: flex; align-items: center; gap: 5px; font-size: 9.5px; color: var(--dim); letter-spacing: 1px; }
+  .next .tag { color: var(--ink); padding: 3px 7px; }
+  .next .tag i { font-style: normal; color: var(--hot); }
+  .wave { font-family: var(--cond); font-size: 12px; letter-spacing: 1.5px; padding: 0 10px; height: 32px; display: flex; align-items: center; }
+  .wave em { font-style: normal; color: var(--dim); margin-left: 4px; }
+
+  .console { position: absolute; top: 0; right: 0; bottom: 0; width: 212px; background: linear-gradient(180deg, #11141a, #0d1014); border-left: 1px solid var(--edge2); box-shadow: -12px 0 24px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
+  .c-head { padding: 9px 10px 9px; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: end; border-bottom: 1px solid var(--edge); }
+  .lbl { font-size: 8.5px; letter-spacing: 1.6px; color: var(--dim); text-transform: uppercase; }
+  .big { font-family: var(--cond); font-weight: 600; font-size: 20px; line-height: 1; }
+  .big small { font-size: 11px; color: var(--dim); font-weight: 500; }
+  .bits { text-align: right; }
+  .bits .gain { font-size: 10px; color: var(--dmg); }
+  .integ { grid-column: 1 / -1; height: 6px; margin-top: 3px; position: relative; border-radius: 1px; }
+  .integ i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(180deg, #e6f3ff, #9cc9f2); box-shadow: 0 0 8px rgba(160,205,255,0.45); }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 6px 8px 0; gap: 4px; }
+  .tabs div { text-align: center; padding: 6px 0 6px; font-size: 9px; letter-spacing: 1.8px; color: var(--dim); border-bottom: 2px solid transparent; }
+  .tabs div.on { color: var(--ink); border-bottom-color: var(--ice); }
+  .asset { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
+  .a-top { display: flex; gap: 8px; align-items: center; }
+  .a-top .ic { width: 38px; height: 38px; position: relative; }
+  .a-top .ic canvas { position: absolute; inset: 0; }
+  .a-name { font-family: var(--cond); font-weight: 600; font-size: 14px; letter-spacing: 1px; }
+  .a-tier { font-size: 8.5px; color: var(--dim); letter-spacing: 1.1px; }
+  .role { display: inline-block; font-size: 7.5px; letter-spacing: 1.2px; padding: 1px 4px; margin-right: 4px; color: var(--area); border: 1px solid color-mix(in srgb, var(--area) 45%, transparent); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
+  .stats div { display: flex; justify-content: space-between; padding: 3px 6px; font-size: 9.5px; }
+  .stats span { color: var(--dim); }
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); padding: 2px; gap: 2px; }
+  .seg div { text-align: center; font-size: 8px; letter-spacing: 0.8px; padding: 4px 0; color: var(--dim); }
+  .seg div.on { color: var(--ink); background: linear-gradient(180deg, #232931, #1a1f25); box-shadow: inset 0 1px 0 var(--hi); }
+  .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+  .br { padding: 6px 7px 7px; display: flex; flex-direction: column; gap: 3px; position: relative; }
+  .br.on { border-color: color-mix(in srgb, var(--area) 60%, var(--edge)); box-shadow: inset 0 1px 0 var(--hi), 0 0 0 1px color-mix(in srgb, var(--area) 25%, transparent), 0 2px 6px rgba(0,0,0,0.45); }
+  .br b { font-family: var(--cond); font-size: 11px; letter-spacing: 0.6px; }
+  .br span { font-size: 8.5px; color: var(--dim); line-height: 1.25; }
+  .actions { display: grid; grid-template-columns: 1fr 1.25fr; gap: 5px; margin-top: auto; }
+
+  /* buttons */
+  .btn { position: relative; height: 32px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 9px; letter-spacing: 1.3px; color: var(--ink); }
+  .btn .cost { font-size: 9.5px; padding: 2px 6px; color: var(--ice); }
+  .btn.primary { border-color: color-mix(in srgb, var(--ice) 50%, var(--edge2)); }
+  .btn.primary::before { content: ''; position: absolute; left: 8px; right: 8px; top: -1px; height: 1px; background: linear-gradient(90deg, transparent, var(--ice), transparent); opacity: 0.9; }
+  .btn.hover { border-color: var(--ice); box-shadow: inset 0 1px 0 var(--hi), 0 0 12px rgba(190,220,255,0.18), 0 2px 6px rgba(0,0,0,0.45); }
+  .btn.pressed { background: linear-gradient(180deg, #101317, #14181d); box-shadow: inset 0 2px 4px rgba(0,0,0,0.6); transform: translateY(1px); }
+  .btn.pressed::before { opacity: 0.4; }
+  .btn.disabled { background: var(--inset); border-color: #161a1f; box-shadow: inset 0 1px 3px rgba(0,0,0,0.7); color: var(--mute); }
+  .btn.disabled::before { display: none; }
+  .btn.disabled .cost { color: #8a4a4c; }
+  .btn.ghost { color: var(--dim); }
+  .c-foot { padding: 6px 10px; border-top: 1px solid var(--edge); font-size: 8.5px; white-space: nowrap; overflow: hidden; }
+  .c-foot .t { color: var(--dim); }
+  .c-foot u { text-decoration: none; color: var(--dmg); }
+
+  /* ui sheet */
+  .uisheet { position: absolute; inset: 0; padding: 14px 16px; display: grid; grid-template-columns: 1fr 212px; gap: 18px; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .h { font-family: var(--cond); font-size: 11px; letter-spacing: 2px; color: var(--dim); border-bottom: 1px solid var(--edge); padding-bottom: 4px; }
+  .states { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: end; }
+  .states figure { margin: 0; display: flex; flex-direction: column; gap: 5px; }
+  .states figcaption { font-size: 8px; letter-spacing: 1.4px; color: var(--mute); text-align: center; }
+  .deploy { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; }
+  .card { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; height: 50px; position: relative; }
+  .card .ic { width: 40px; height: 40px; position: relative; }
+  .card .ic canvas { position: absolute; inset: 0; }
+  .card b { font-family: var(--cond); font-size: 12px; letter-spacing: 0.6px; display: block; }
+  .card small { font-size: 8px; letter-spacing: 1px; }
+  .card .cost { font-size: 10px; padding: 2px 6px; color: var(--ice); }
+  .card::after { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2px; background: var(--rc); box-shadow: 0 0 6px var(--rc); }
+  .card.poor { background: var(--inset); box-shadow: inset 0 1px 3px rgba(0,0,0,0.7); }
+  .card.poor b { color: var(--dim); }
+  .card.poor .cost { color: #8a4a4c; }
+  .card.poor::after { opacity: 0.3; }
+  .roles { display: flex; gap: 14px; font-size: 9px; letter-spacing: 1.2px; color: var(--dim); }
+  .roles span::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 5px; background: var(--rc); box-shadow: 0 0 6px var(--rc); vertical-align: -1px; }
+  .log { display: flex; flex-direction: column; gap: 3px; font-size: 9px; padding: 6px 8px; }
+  .log div { display: grid; grid-template-columns: 48px 1fr; gap: 6px; }
+  .log .t { color: var(--mute); }
+  .log b { font-weight: 500; color: var(--hot); }
+  .log u { text-decoration: none; color: var(--dmg); }
+  .log s { text-decoration: none; color: var(--sup); }
+
+  /* atmosphere: B's finish, at low strength */
+  .atmo { position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px), radial-gradient(ellipse at 45% 50%, transparent 58%, rgba(0,0,0,0.5)); mix-blend-mode: normal; }
+  .title { position: absolute; left: 16px; top: 10px; font-family: var(--cond); font-size: 12px; letter-spacing: 2px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const VIEW = new URLSearchParams(location.search).get('view') || 'board';
+const W = innerWidth, H = innerHeight, DPR = 2;
+const C = {
+  bg: '#0a0c0f', board: '#0d1014', ink: '#e2e9f0', dim: '#7a8592', mute: '#4c5662', ice: '#cfe6ff',
+  dmg: '#46c8ff', area: '#35e0b2', sup: '#a58bff', hot: '#ff4d4f', warn: '#ffa940',
+  bodyTop: ['#262c34', '#1a1f25'], bodySide: ['#14181d', '#0a0c0f'],
+};
+function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+function mix(h1, h2, t) { const a = parseInt(h1.slice(1), 16), b = parseInt(h2.slice(1), 16); const c = (s) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t); return '#' + [c(16), c(8), c(0)].map((v) => v.toString(16).padStart(2, '0')).join(''); }
+function mkCanvas(w, h) { const c = document.createElement('canvas'); c.width = w * DPR; c.height = h * DPR; c.style.width = w + 'px'; c.style.height = h + 'px'; const g = c.getContext('2d'); g.scale(DPR, DPR); return [c, g]; }
+function polyPath(g, pts) { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.closePath(); }
+const hexPts = (x, y, r) => Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 6 + i * Math.PI / 3; return [x + Math.cos(a) * r, y + Math.sin(a) * r * 0.86]; });
+const octPts = (x, y, r) => Array.from({ length: 8 }, (_, i) => { const a = Math.PI / 8 + i * Math.PI / 4; return [x + Math.cos(a) * r, y + Math.sin(a) * r * 0.86]; });
+const rectPts = (x, y, w, h) => [[x - w, y - h], [x + w, y - h], [x + w, y + h], [x - w, y + h]];
+const circlePath = (x, y, r) => (g) => { g.beginPath(); g.ellipse(x, y, r, r * 0.86, 0, 0, Math.PI * 2); };
+const ptsPath = (pts) => (g) => polyPath(g, pts);
+
+/*
+ * Tilted top-down volume: an object's top face sits `h` px above its footprint and
+ * the front face shows below it. Light comes from the upper left.
+ */
+function shadow(g, path, x, y, h) {
+  g.save(); g.translate(h * 0.55, h * 0.75); g.filter = `blur(${Math.max(1.5, h * 0.35)}px)`; path(g); g.fillStyle = 'rgba(0,0,0,0.55)'; g.fill(); g.restore();
+}
+function solid(g, shapeAt, x, y, h, opts = {}) {
+  const top = opts.top || C.bodyTop, side = opts.side || C.bodySide, rim = opts.rim;
+  shadow(g, shapeAt(x, y), x, y, h);
+  // front face: stack the footprint upward, darkest at the ground
+  for (let k = 0; k <= h; k += 0.5) { shapeAt(x, y - k)(g); g.fillStyle = mix(side[1], side[0], k / Math.max(1, h)); g.fill(); }
+  // top face
+  const p = shapeAt(x, y - h); p(g);
+  const grd = g.createLinearGradient(x - 20, y - h - 20, x + 20, y - h + 20); grd.addColorStop(0, top[0]); grd.addColorStop(1, top[1]);
+  g.fillStyle = grd; g.fill();
+  // lit top edge + accent rim
+  g.save(); p(g); g.clip(); g.strokeStyle = 'rgba(255,255,255,0.16)'; g.lineWidth = 2; g.translate(0.6, 0.9); p(g); g.stroke(); g.restore();
+  if (rim) { p(g); g.strokeStyle = rgba(rim, 0.55); g.lineWidth = 1; g.stroke(); }
+  return y - h;
+}
+function emissive(g, x, y, r, col, a = 1) {
+  g.save(); g.globalCompositeOperation = 'lighter';
+  const grd = g.createRadialGradient(x, y, 0, x, y, r * 3.2); grd.addColorStop(0, rgba(col, 0.55 * a)); grd.addColorStop(0.35, rgba(col, 0.16 * a)); grd.addColorStop(1, rgba(col, 0));
+  g.fillStyle = grd; g.beginPath(); g.arc(x, y, r * 3.2, 0, 7); g.fill(); g.restore();
+  g.save(); g.fillStyle = mix(col, '#ffffff', 0.55); g.beginPath(); g.ellipse(x, y, r, r * 0.86, 0, 0, 7); g.fill();
+  g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(x - r * 0.25, y - r * 0.25, r * 0.4, r * 0.34, 0, 0, 7); g.fill(); g.restore();
+}
+function lightPool(g, x, y, r, col, a = 0.16) {
+  g.save(); g.globalCompositeOperation = 'lighter';
+  const grd = g.createRadialGradient(x, y, 0, x, y, r); grd.addColorStop(0, rgba(col, a)); grd.addColorStop(1, rgba(col, 0));
+  g.fillStyle = grd; g.beginPath(); g.ellipse(x, y, r, r * 0.86, 0, 0, 7); g.fill(); g.restore();
+}
+
+/* ------------------------------------------------------------------ towers */
+function inspector(g, x, y, s, tier) {
+  const col = C.dmg, h = s * (0.12 + tier * 0.04);
+  lightPool(g, x, y + s * 0.05, s * 0.85, col, 0.12 + tier * 0.03);
+  if (tier >= 3) { // ground ring + three sensor pods
+    g.save(); g.strokeStyle = rgba(col, 0.35); g.lineWidth = 1; g.beginPath(); g.ellipse(x, y, s * 0.46, s * 0.4, 0, 0, 7); g.stroke(); g.restore();
+    for (let k = 0; k < 3; k++) { const a = -Math.PI / 2 + Math.PI / 6 + k * Math.PI * 2 / 3; const px = x + Math.cos(a) * s * 0.42, py = y + Math.sin(a) * s * 0.36; const ty = solid(g, (xx, yy) => circlePath(xx, yy, s * 0.065), px, py, s * 0.1); emissive(g, px, ty, s * 0.025, col, 0.7); }
+  }
+  if (tier >= 2) for (const sx of [-1, 1]) solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.05, s * 0.14)), x + sx * s * 0.31, y, h * 0.7, { rim: col });
+  const ty = solid(g, (xx, yy) => ptsPath(hexPts(xx, yy, s * 0.29)), x, y, h, { rim: col });
+  // lens turret on top
+  const ly = solid(g, (xx, yy) => circlePath(xx, yy, s * 0.12), x, ty, s * 0.05, { rim: col });
+  g.save(); g.beginPath(); g.ellipse(x, ly, s * 0.085, s * 0.073, 0, 0, 7); g.fillStyle = '#06131a'; g.fill(); g.restore();
+  emissive(g, x, ly, s * 0.045, col);
+}
+function limiter(g, x, y, s, tier) {
+  const col = C.sup, h = s * (0.1 + tier * 0.035);
+  lightPool(g, x, y + s * 0.05, s * 0.85, col, 0.12 + tier * 0.03);
+  if (tier >= 3) for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2; const px = x + Math.cos(a) * s * 0.4, py = y + Math.sin(a) * s * 0.34; const ty = solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.035, s * 0.035)), px, py, s * 0.16); emissive(g, px, ty, s * 0.022, col, 0.8); }
+  if (tier >= 2) solid(g, (xx, yy) => circlePath(xx, yy, s * 0.36), x, y, s * 0.04, { rim: col });
+  const ty = solid(g, (xx, yy) => circlePath(xx, yy, s * 0.29), x, y, h, { rim: col });
+  // iris: blades converge on a bright aperture
+  g.save(); g.beginPath(); g.ellipse(x, ty, s * 0.21, s * 0.18, 0, 0, 7); g.fillStyle = '#0c0a14'; g.fill(); g.clip();
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; g.beginPath(); g.moveTo(x + Math.cos(a) * s * 0.24, ty + Math.sin(a) * s * 0.2); g.lineTo(x + Math.cos(a + 1.15) * s * 0.06, ty + Math.sin(a + 1.15) * s * 0.05); g.lineTo(x + Math.cos(a + 0.6) * s * 0.26, ty + Math.sin(a + 0.6) * s * 0.22); g.closePath(); g.fillStyle = k % 2 ? '#1c1a26' : '#24212f'; g.fill(); g.strokeStyle = rgba(col, 0.45); g.lineWidth = 0.7; g.stroke(); }
+  g.restore();
+  emissive(g, x, ty, s * 0.04, col);
+}
+function sandbox(g, x, y, s, tier, branch) {
+  const col = C.area, h = s * (0.13 + tier * 0.035);
+  lightPool(g, x, y + s * 0.05, s * 0.9, col, 0.12 + tier * 0.03);
+  if (branch === 'cluster') for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { const px = x + sx * s * 0.38, py = y + sy * s * 0.33; const ty = solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.07, s * 0.06)), px, py, h * 0.8, { rim: col }); emissive(g, px, ty, s * 0.022, col, 0.8); }
+  if (tier >= 2 && branch !== 'cluster') solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.37, s * 0.32)), x, y, s * 0.04, { rim: col });
+  const ty = solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.29, s * 0.25)), x, y, h, { rim: col });
+  // recessed containment well with a floating core
+  g.save(); polyPath(g, rectPts(x, ty, s * 0.17, s * 0.145)); g.fillStyle = '#04100c'; g.fill();
+  g.strokeStyle = 'rgba(0,0,0,0.8)'; g.lineWidth = 2; g.stroke(); g.restore();
+  g.save(); polyPath(g, [[x, ty - s * 0.1], [x + s * 0.09, ty], [x, ty + s * 0.085], [x - s * 0.09, ty]]); g.strokeStyle = rgba(col, 0.9); g.lineWidth = 1; g.stroke(); g.restore();
+  emissive(g, x, ty, s * 0.035, col);
+  if (branch === 'remote') { // relay mast: tall, unmistakable silhouette
+    const mx = x + s * 0.2, my = y - s * 0.12;
+    const top = solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.025, s * 0.022)), mx, my, s * 0.55);
+    g.save(); g.strokeStyle = rgba(col, 0.85); g.lineWidth = 1.4; g.beginPath(); g.ellipse(mx, top - s * 0.02, s * 0.12, s * 0.05, -0.4, Math.PI * 0.95, Math.PI * 2.05); g.stroke(); g.restore();
+    emissive(g, mx, top, s * 0.025, col);
+  }
+}
+function upMark(g, x, y, s) { // small raised chevron tab, upper right of the cell
+  g.save(); const px = x + s * 0.36, py = y - s * 0.4; g.fillStyle = '#1b2026'; g.strokeStyle = rgba(C.ice, 0.85); g.lineWidth = 1; g.beginPath(); g.roundRect(px - 6, py - 5, 12, 10, 2); g.fill(); g.stroke(); g.beginPath(); g.moveTo(px - 3, py + 1.5); g.lineTo(px, py - 1.5); g.lineTo(px + 3, py + 1.5); g.stroke(); g.restore();
+}
+
+/* ----------------------------------------------------------------- malware */
+// Floating packets. Health is layers: each shell stripped shrinks it and runs it hotter.
+function heat(layers, max) { return mix(C.hot, '#ffd9a8', 1 - (layers - 1) / Math.max(1, max - 1)); }
+function floatShadow(g, x, y, r) { g.save(); g.filter = 'blur(2px)'; g.fillStyle = 'rgba(0,0,0,0.6)'; g.beginPath(); g.ellipse(x + r * 0.3, y + r * 0.9, r * 0.9, r * 0.4, 0, 0, 7); g.fill(); g.restore(); }
+function shell(g, pts, col, a) {
+  polyPath(g, pts); const b = pts.reduce((m, p) => [Math.min(m[0], p[0]), Math.min(m[1], p[1]), Math.max(m[2], p[0]), Math.max(m[3], p[1])], [1e9, 1e9, -1e9, -1e9]);
+  const grd = g.createLinearGradient(b[0], b[1], b[2], b[3]); grd.addColorStop(0, rgba(col, 0.22 * a)); grd.addColorStop(1, rgba(col, 0.05 * a));
+  g.fillStyle = grd; g.fill(); g.strokeStyle = rgba(col, 0.9 * a); g.lineWidth = 1; g.stroke();
+}
+function worm(g, x, y, s, layers, a = 0) {
+  const col = heat(layers, 3), lift = s * 0.12, r = s * (0.08 + layers * 0.05);
+  floatShadow(g, x, y, r); lightPool(g, x, y, s * 0.55, C.hot, 0.1 + layers * 0.03);
+  g.save(); g.translate(x, y - lift); g.rotate(a);
+  for (let k = layers; k >= 1; k--) { const rr = s * (0.06 + k * 0.05); shell(g, [[rr * 1.35, 0], [0, rr * 0.8], [-rr * 1.1, 0], [0, -rr * 0.8]], col, k === layers ? 0.6 : 1); }
+  g.restore();
+  emissive(g, x, y - lift, s * 0.035, col);
+}
+function spyware(g, x, y, s, layers, a = 0) {
+  const col = mix(C.warn, '#ffe9c4', 1 - (layers - 1)), lift = s * 0.14, r = s * 0.15;
+  floatShadow(g, x, y, r); lightPool(g, x, y, s * 0.5, C.warn, 0.12);
+  g.save(); g.translate(x, y - lift); g.rotate(a);
+  g.save(); g.globalCompositeOperation = 'lighter'; const grd = g.createLinearGradient(-s * 0.75, 0, -s * 0.1, 0); grd.addColorStop(0, rgba(C.warn, 0)); grd.addColorStop(1, rgba(C.warn, 0.45)); g.fillStyle = grd; g.beginPath(); g.moveTo(-s * 0.75, 0); g.lineTo(-s * 0.12, -s * 0.05); g.lineTo(-s * 0.12, s * 0.05); g.closePath(); g.fill(); g.restore();
+  for (let k = layers; k >= 1; k--) { const rr = s * (0.1 + k * 0.05); g.beginPath(); g.moveTo(-rr, 0); g.quadraticCurveTo(0, -rr * 0.75, rr, 0); g.quadraticCurveTo(0, rr * 0.75, -rr, 0); g.fillStyle = rgba(col, 0.12); g.fill(); g.strokeStyle = rgba(col, 0.9); g.lineWidth = 1; g.stroke(); }
+  g.restore();
+  emissive(g, x, y - lift, s * 0.035, col);
+}
+function trojan(g, x, y, s, revealed, layers = 4) {
+  if (!revealed) {
+    // Disguised: built like one of your own nodes. A hairline red seam is the only tell.
+    const ty = solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.19, s * 0.165)), x, y, s * 0.12, { rim: C.ice });
+    emissive(g, x, ty, s * 0.03, C.ice, 0.7);
+    g.save(); g.strokeStyle = rgba(C.hot, 0.8); g.lineWidth = 0.8; g.beginPath(); g.moveTo(x - s * 0.19, ty + s * 0.05); g.lineTo(x + s * 0.19, ty - s * 0.04); g.stroke(); g.restore();
+    return;
+  }
+  const lift = s * 0.12; floatShadow(g, x, y, s * 0.22); lightPool(g, x, y, s * 0.7, C.hot, 0.18);
+  for (let k = layers; k >= 1; k--) { const rr = s * (0.07 + k * 0.042); shell(g, rectPts(x, y - lift, rr, rr * 0.86), heat(k, 4), k === layers ? 0.6 : 1); }
+  emissive(g, x, y - lift, s * 0.05, heat(layers, 4));
+}
+function shatter(g, x, y, s) {
+  lightPool(g, x, y, s * 0.8, '#ffd9a8', 0.22);
+  g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(255,240,220,0.7)'; g.lineWidth = 1; g.beginPath(); g.ellipse(x, y - s * 0.1, s * 0.24, s * 0.2, 0, 0, 7); g.stroke(); g.restore();
+  const frags = [[0.32, -0.5, 0.2], [0.58, 0.05, 0.9], [-0.2, 0.42, 2.1], [-0.58, -0.18, 3.2], [0.15, 0.55, 4.4], [-0.32, -0.55, 5.2]];
+  for (const [fx, fy, rot] of frags) { g.save(); g.translate(x + fx * s * 0.55, y - s * 0.1 + fy * s * 0.5); g.rotate(rot); polyPath(g, [[0, -s * 0.05], [s * 0.04, s * 0.03], [-s * 0.035, s * 0.03]]); g.fillStyle = '#ffcf9a'; g.fill(); g.restore(); }
+}
+
+/* ------------------------------------------------------------------- board */
+const COLS = 18, ROWS = 10;
+const GRID = [
+  '.......I..........',
+  'S......I..........',
+  '....vv.I..........',
+  '....vv.L.S.....L..',
+  '.......I.Idddd..CC',
+  '.......I.Idddd..CC',
+  '....ww.X.I..e.....',
+  '....ww...I........',
+  'S........I........',
+  '.........I........',
+];
+const TIERS = { '7,1': 2, '9,5': 3, '9,7': 2, '7,3': 2, '15,3': 1 };
+
+function bfsRoute(sx, sy, blocked) {
+  const dist = Array.from({ length: ROWS }, () => new Array(COLS).fill(-1)), q = [];
+  for (const [x, y] of [[16, 4], [17, 4], [16, 5], [17, 5]]) { dist[y][x] = 0; q.push([x, y]); }
+  const D = [[1, 0], [0, 1], [0, -1], [-1, 0]];
+  while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of D) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || dist[ny][nx] >= 0 || blocked(nx, ny)) continue; dist[ny][nx] = dist[y][x] + 1; q.push([nx, ny]); } }
+  const out = [[sx, sy]]; let x = sx, y = sy, pd = 0;
+  while (dist[y][x] > 0 && out.length < 200) { for (const k of [pd, 0, 1, 2, 3]) { const nx = x + D[k][0], ny = y + D[k][1]; if (nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS && dist[ny][nx] === dist[y][x] - 1) { x = nx; y = ny; pd = k; break; } } out.push([x, y]); }
+  return out;
+}
+function chamfer(pts, s) {
+  pts = pts.slice(); pts[0] = [pts[0][0] + s * 0.3, pts[0][1]];
+  const cs = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) { const a = pts[i - 1], p = pts[i], c = pts[i + 1]; if (Math.abs((p[0] - a[0]) * (c[1] - p[1]) - (p[1] - a[1]) * (c[0] - p[0])) > 1e-6) cs.push(p); }
+  cs.push(pts[pts.length - 1]);
+  const out = [cs[0]], ch = s * 0.35;
+  for (let i = 1; i < cs.length - 1; i++) { const a = cs[i - 1], p = cs[i], c = cs[i + 1]; const la = Math.hypot(p[0] - a[0], p[1] - a[1]), lc = Math.hypot(c[0] - p[0], c[1] - p[1]); const ca = Math.min(ch, la / 2), cc = Math.min(ch, lc / 2); out.push([p[0] - (p[0] - a[0]) / la * ca, p[1] - (p[1] - a[1]) / la * ca]); out.push([p[0] + (c[0] - p[0]) / lc * cc, p[1] + (c[1] - p[1]) / lc * cc]); }
+  out.push(cs[cs.length - 1]);
+  return out;
+}
+function pathLen(pts) { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; }
+function pointAt(pts, d, off = 0) {
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (d <= l) { const ux = (pts[i][0] - pts[i - 1][0]) / l, uy = (pts[i][1] - pts[i - 1][1]) / l; return [pts[i - 1][0] + ux * d - uy * off, pts[i - 1][1] + uy * d + ux * off, Math.atan2(uy, ux)]; } d -= l; }
+  const p = pts[pts.length - 1]; return [p[0], p[1], 0];
+}
+function stroke(g, pts, w, style, off = 0) {
+  g.beginPath();
+  if (!off) { g.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) g.lineTo(p[0], p[1]); }
+  else for (let d = 0, L = pathLen(pts); d <= L; d += 1.5) { const [x, y] = pointAt(pts, d, off); if (d === 0) g.moveTo(x, y); else g.lineTo(x, y); }
+  g.lineWidth = w; g.strokeStyle = style; g.lineJoin = 'miter'; g.lineCap = 'butt'; g.stroke();
+}
+/** The traffic link: a recessed channel cut into the board, faintly lit by what flows through it. */
+function channel(g, pts, s) {
+  stroke(g, pts, s * 0.5, '#06080a');
+  stroke(g, pts, 1, 'rgba(0,0,0,0.9)', -s * 0.23);        // shadowed upper lip
+  stroke(g, pts, 1, 'rgba(255,255,255,0.07)', s * 0.25);  // lit lower lip
+  g.save(); g.globalCompositeOperation = 'lighter'; stroke(g, pts, s * 0.22, rgba(C.hot, 0.06)); stroke(g, pts, 1, rgba(C.hot, 0.35)); g.restore();
+  g.save(); g.strokeStyle = rgba(C.hot, 0.5); g.lineWidth = 1;
+  for (let d = s * 1.4, L = pathLen(pts); d < L - s; d += s * 2.6) { const [x, y, a] = pointAt(pts, d); g.save(); g.translate(x, y); g.rotate(a); g.beginPath(); g.moveTo(-2.5, -3.5); g.lineTo(1, 0); g.lineTo(-2.5, 3.5); g.stroke(); g.restore(); }
+  g.restore();
+}
+
+function drawBoard(g, ox, oy, s) {
+  const X = (cx) => ox + cx * s, Y = (cy) => oy + cy * s;
+  const blocked = (cx, cy) => { const ch = GRID[cy][cx]; return 'IvwdeLXS'.includes(ch) && !(ch === 'S' && cx === 0); };
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  // board plate: slightly raised slab
+  g.save(); g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = 18; g.shadowOffsetY = 6;
+  const bg = g.createLinearGradient(ox, oy, ox + COLS * s, oy + ROWS * s); bg.addColorStop(0, '#11151a'); bg.addColorStop(1, '#0b0e12');
+  g.fillStyle = bg; g.fillRect(ox, oy, COLS * s, ROWS * s); g.restore();
+  g.strokeStyle = 'rgba(255,255,255,0.06)'; g.beginPath(); g.moveTo(ox, oy + 0.5); g.lineTo(ox + COLS * s, oy + 0.5); g.stroke();
+  // dot grid
+  g.fillStyle = 'rgba(210,225,240,0.13)';
+  for (let y = 1; y < ROWS; y++) for (let x = 1; x < COLS; x++) g.fillRect(X(x) - 0.75, Y(y) - 0.75, 1.5, 1.5);
+  // coordinates
+  g.fillStyle = C.mute; g.font = '500 7px IBM Plex Mono'; g.textAlign = 'center';
+  for (let x = 0; x < COLS; x++) g.fillText(String.fromCharCode(65 + x), X(x + 0.5), oy - 4);
+  g.textAlign = 'right'; for (let y = 0; y < ROWS; y++) g.fillText(String(y + 1).padStart(2, '0'), ox - 4, Y(y + 0.5) + 2.5);
+
+  // restricted subnets: low raised plinths
+  const plinth = (x0, y0, w, h, label) => {
+    const cx = X(x0 + w / 2), cy = Y(y0 + h / 2), hw = w * s / 2 - 4, hh = h * s / 2 - 4;
+    const ty = solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, hw, hh)), cx, cy, 3, { top: ['#15191e', '#111418'], side: ['#0d1013', '#080a0c'] });
+    g.save(); polyPath(g, rectPts(cx, ty, hw, hh)); g.clip(); g.strokeStyle = 'rgba(200,215,230,0.05)'; g.lineWidth = 1;
+    for (let d = -hh * 2; d < hw * 2 + hh * 2; d += 5) { g.beginPath(); g.moveTo(cx - hw + d, ty - hh); g.lineTo(cx - hw + d - hh * 2, ty + hh); g.stroke(); } g.restore();
+    g.fillStyle = C.dim; g.font = '600 7.5px IBM Plex Mono'; g.textAlign = 'left'; g.fillText(label, cx - hw + 5, ty - hh + 11);
+    g.fillStyle = C.mute; g.font = '500 6px IBM Plex Mono'; g.fillText('ISOLATED', cx - hw + 5, ty - hh + 19);
+  };
+  plinth(4, 2, 2, 2, 'VLAN-20'); plinth(4, 6, 2, 2, 'VLAN-30');
+  // DMZ racks: real boxes with status LEDs
+  { const cx = X(12), cy = Y(5); solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, 2 * s - 4, s - 4)), cx, cy, 2, { top: ['#13171b', '#101317'], side: ['#0c0f12', '#080a0c'] });
+    g.fillStyle = C.dim; g.font = '600 7.5px IBM Plex Mono'; g.textAlign = 'left'; g.fillText('DMZ', X(10) + 7, Y(4) + 10);
+    for (let r = 0; r < 3; r++) { const rx = X(10.85 + r * 1.15), ry = Y(5.15); const ty = solid(g, (xx, yy) => ptsPath(rectPts(xx, yy, s * 0.36, s * 0.5)), rx, ry, s * 0.22, { top: ['#1d2229', '#161a20'] }); for (let u = 0; u < 4; u++) { g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(rx - s * 0.28, ty - s * 0.38 + u * s * 0.2, s * 0.5, 2); g.fillStyle = u === 1 ? rgba(C.dmg, 0.9) : 'rgba(120,200,160,0.55)'; g.fillRect(rx + s * 0.24, ty - s * 0.38 + u * s * 0.2, 2, 2); } } }
+  // endpoint node
+  { const x = X(12.5), y = Y(6.5); const ty = solid(g, (xx, yy) => circlePath(xx, yy, s * 0.17), x, y, s * 0.12, { top: ['#1d2229', '#15191e'] }); emissive(g, x, ty, s * 0.025, '#7fd6a8', 0.5); g.fillStyle = C.mute; g.font = '500 6px IBM Plex Mono'; g.textAlign = 'center'; g.fillText('EP-12', x, y + s * 0.42); }
+
+  // routes
+  const r0 = chamfer(bfsRoute(0, 1, blocked).map(([x, y]) => [X(x + 0.5), Y(y + 0.5)]), s), r1 = chamfer(bfsRoute(0, 8, blocked).map(([x, y]) => [X(x + 0.5), Y(y + 0.5)]), s);
+  channel(g, r0, s); channel(g, r1, s);
+  // rate limiter clamps: the channel pinches inside the field
+  for (const [cx, cy, R, pts] of [[X(7.5), Y(3.5), s * 2, r0], [X(15.5), Y(3.5), s * 1.7, r0]]) {
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (const off of [-1, 1]) { g.beginPath(); let on = false; for (let d = 0, L = pathLen(pts); d <= L; d += 1.5) { const [x0, y0] = pointAt(pts, d); if (Math.hypot(x0 - cx, (y0 - cy) / 0.86) > R) { on = false; continue; } const [x, y] = pointAt(pts, d, off * s * 0.13); if (!on) { g.moveTo(x, y); on = true; } else g.lineTo(x, y); } g.strokeStyle = rgba(C.sup, 0.85); g.lineWidth = 1.2; g.stroke(); }
+    g.restore(); lightPool(g, cx, cy, R, C.sup, 0.05);
+  }
+
+  // ingress nodes
+  for (const [cx, cy, label] of [[0, 1, 'WAN-1'], [0, 8, 'WAN-2']]) {
+    const x = X(cx + 0.5) - s * 0.05, y = Y(cy + 0.5);
+    lightPool(g, x, y, s * 0.9, C.hot, 0.2);
+    const ty = solid(g, (xx, yy) => (gg) => { gg.beginPath(); gg.ellipse(xx, yy, s * 0.3, s * 0.26, 0, -Math.PI / 2, Math.PI / 2); gg.closePath(); }, x - s * 0.1, y, s * 0.16, { rim: C.hot });
+    emissive(g, x - s * 0.02, ty, s * 0.05, C.hot);
+    g.fillStyle = C.hot; g.font = '600 7px IBM Plex Mono'; g.textAlign = 'left'; g.fillText(label, X(cx) + 3, Y(cy) + 7);
+  }
+
+  // network links between adjacent friendly nodes (cables on the board)
+  const towers = [];
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) { const ch = GRID[y][x]; if ('ILXS'.includes(ch) && !(ch === 'S' && x === 0)) towers.push([x, y, ch]); }
+  g.strokeStyle = 'rgba(207,230,255,0.22)'; g.lineWidth = 1.5;
+  for (const [x, y] of towers) for (const [x2, y2] of towers) if ((x2 === x + 1 && y2 === y) || (x2 === x && y2 === y + 1)) { g.beginPath(); g.moveTo(X(x + 0.5), Y(y + 0.5)); g.lineTo(X(x2 + 0.5), Y(y2 + 0.5)); g.stroke(); }
+
+  // selected tower: range on the board, under everything that stands up
+  { const x = X(9.5), y = Y(3.5); g.save(); g.beginPath(); g.ellipse(x, y, s * 4.5, s * 4.5 * 0.86, 0, 0, 7); g.fillStyle = rgba(C.area, 0.025); g.fill(); g.strokeStyle = rgba(C.area, 0.35); g.lineWidth = 1; g.stroke(); g.beginPath(); g.ellipse(x, y, s * 1.5, s * 1.5 * 0.86, 0, 0, 7); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fill(); g.strokeStyle = rgba(C.hot, 0.3); g.stroke(); g.restore(); }
+
+  // malware rides the channel, in lanes
+  const L0 = pathLen(r0), L1 = pathLen(r1), at = (pts, f, L, lane) => pointAt(pts, L * f, lane * s * 0.12);
+  const draws = [];
+  [[0.3, -1, 3], [0.315, 1, 3], [0.33, 0, 2], [0.345, -1, 3], [0.36, 1, 1], [0.375, 0, 3]].forEach(([f, lane, l]) => draws.push(['w', ...at(r0, f, L0, lane), l]));
+  [[0.205, 0, 3], [0.215, 0, 3], [0.225, 0, 2]].forEach(([f, lane, l]) => draws.push(['w', ...at(r0, f, L0, lane), l]));
+  draws.push(['spy', ...at(r1, 0.6, L1, 0), 2]); draws.push(['spy', ...at(r1, 0.2, L1, 0), 1]);
+  draws.push(['tro', ...at(r1, 0.07, L1, 0), 0]); draws.push(['trr', ...at(r0, 0.09, L0, 0), 3]);
+  const beamT = at(r0, 0.43, L0, 0); draws.push(['w', ...beamT, 2]);
+
+  // towers and malware sorted by y so nearer things overlap farther ones
+  const things = towers.map(([x, y, ch]) => ({ y: Y(y + 0.5), fn: () => { const px = X(x + 0.5), py = Y(y + 0.5), t = TIERS[`${x},${y}`] ?? 1; if (ch === 'I') inspector(g, px, py, s, t); else if (ch === 'L') limiter(g, px, py, s, t); else if (ch === 'S') sandbox(g, px, py, s, 2); else sandbox(g, px, py, s, 1); } }));
+  for (const d of draws) things.push({ y: d[2], fn: () => { const [k, x, y, a, l] = d; if (k === 'w') worm(g, x, y, s, l, a); else if (k === 'spy') spyware(g, x, y, s, l, a); else if (k === 'tro') trojan(g, x, y, s, false); else trojan(g, x, y, s, true, l); } });
+  // core
+  things.push({ y: Y(5), fn: () => {
+    const x = X(17), y = Y(5);
+    lightPool(g, x, y, s * 1.6, '#bcdcff', 0.16);
+    g.save(); g.lineWidth = 3; g.beginPath(); g.ellipse(x, y, s * 0.86, s * 0.74, 0, -Math.PI / 2 + Math.PI * 2 * 0.85, -Math.PI / 2 + Math.PI * 2); g.strokeStyle = rgba(C.hot, 0.45); g.stroke();
+    g.beginPath(); g.ellipse(x, y, s * 0.86, s * 0.74, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * 0.85); g.strokeStyle = '#d8ecff'; g.shadowColor = '#9cc9f2'; g.shadowBlur = 8; g.stroke(); g.restore();
+    const t1 = solid(g, (xx, yy) => ptsPath(octPts(xx, yy, s * 0.6)), x, y, s * 0.16, { rim: C.ice });
+    const t2 = solid(g, (xx, yy) => ptsPath(octPts(xx, yy, s * 0.34)), x, t1, s * 0.14, { rim: C.ice });
+    emissive(g, x, t2, s * 0.08, '#bcdcff');
+    g.fillStyle = C.ink; g.font = '600 7px IBM Plex Mono'; g.textAlign = 'center'; g.fillText('CORE · DC-01', x, Y(3.8));
+  } });
+  things.sort((a, b) => a.y - b.y).forEach((t) => t.fn());
+  upMark(g, X(7.5), Y(4.5), s); upMark(g, X(9.5), Y(8.5), s);
+  // selection brackets
+  { const x = X(9.5), y = Y(3.5) - s * 0.1, o = s * 0.54, k = s * 0.17; g.strokeStyle = rgba(C.area, 0.95); g.lineWidth = 1.5; for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(x + sx * o, y + sy * (o - k)); g.lineTo(x + sx * o, y + sy * o); g.lineTo(x + sx * (o - k), y + sy * o); g.stroke(); } }
+  // inspector Mk III beam lock
+  { const sx = X(9.5), sy = Y(5.5) - s * 0.36, [tx, ty] = beamT, tyy = ty - s * 0.12;
+    g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = rgba(C.dmg, 0.25); g.lineWidth = 4; g.beginPath(); g.moveTo(sx, sy); g.lineTo(tx, tyy); g.stroke(); g.strokeStyle = rgba('#dff6ff', 0.9); g.lineWidth = 1; g.stroke(); g.restore();
+    const o = s * 0.2, kk = s * 0.08; g.strokeStyle = C.dmg; g.lineWidth = 1; for (const [qx, qy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(tx + qx * o, tyy + qy * (o - kk)); g.lineTo(tx + qx * o, tyy + qy * o); g.lineTo(tx + qx * (o - kk), tyy + qy * o); g.stroke(); }
+    g.fillStyle = C.dmg; g.font = '500 6.5px IBM Plex Mono'; g.textAlign = 'left'; g.fillText('WRM 0x3A', tx + o + 3, tyy - o + 4); }
+  // sandbox isolation field on the lower route
+  { const [x, y] = at(r1, 0.3, L1, 0), r = s * 0.6;
+    lightPool(g, x, y, s * 1.1, C.area, 0.2);
+    g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = rgba(C.area, 0.85); g.lineWidth = 1.2;
+    g.strokeRect(x - r, y - r * 0.86, r * 2, r * 1.72); g.strokeStyle = rgba(C.area, 0.4); g.strokeRect(x - r, y - r * 0.86 - r * 0.6, r * 2, r * 1.72);
+    for (const [ax, ay] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(x + ax * r, y + ay * r * 0.86); g.lineTo(x + ax * r, y + ay * r * 0.86 - r * 0.6); g.stroke(); }
+    g.fillStyle = rgba(C.area, 0.06); g.fillRect(x - r, y - r * 0.86 - r * 0.6, r * 2, r * 1.72 + r * 0.6); g.restore();
+    worm(g, x - s * 0.15, y, s, 1); shatter(g, x + s * 0.12, y + s * 0.05, s * 0.8); }
+  // kill + merged bits token
+  { const [x, y] = at(r0, 0.78, L0, 0); shatter(g, x, y, s); g.save(); g.fillStyle = '#e9f5ff'; g.font = '600 8px IBM Plex Mono'; g.textAlign = 'center'; g.shadowColor = '#9cc9f2'; g.shadowBlur = 6; g.fillText('+6', x, y - s * 0.55); g.restore(); }
+  // board frame brackets
+  g.strokeStyle = 'rgba(207,230,255,0.5)'; g.lineWidth = 1.5; const k = 10;
+  for (const [x, y, dx, dy] of [[ox, oy, 1, 1], [ox + COLS * s, oy, -1, 1], [ox, oy + ROWS * s, 1, -1], [ox + COLS * s, oy + ROWS * s, -1, -1]]) { g.beginPath(); g.moveTo(x - dx * 3, y + dy * k); g.lineTo(x - dx * 3, y - dy * 3); g.lineTo(x + dx * k, y - dy * 3); g.stroke(); }
+}
+
+/* ------------------------------------------------------------------- views */
+function icon(fn, size = 38) { const [c, g] = mkCanvas(size, size); fn(g, size / 2, size / 2 + 3, size * 0.92); return c; }
+const SVG = {
+  menu: '<svg viewBox="0 0 14 14"><path d="M2 3h10M2 7h10M2 11h10" stroke="currentColor" stroke-width="1.4"/></svg>',
+  pause: '<svg viewBox="0 0 14 14"><path d="M4.5 2.5v9M9.5 2.5v9" stroke="currentColor" stroke-width="2"/></svg>',
+};
+function topStrip() {
+  return `<div class="top">
+    <div class="sq raised">${SVG.menu}</div><div class="sq raised">${SVG.pause}</div><div class="sq raised on" style="font-size:10px;font-weight:600">2×</div>
+    <div class="sector"><b>SECTOR 01 · BOOT SEGMENT</b><span>INCIDENT 26-1127 · <i>ACTIVE</i></span></div>
+    <div class="spacer"></div>
+    <div class="next">NEXT <span class="tag raised">WRM <i>×22</i></span><span class="tag raised">SPY <i>×6</i></span></div>
+    <div class="wave raised">WAVE 07<em>/15</em></div>
+  </div>`;
+}
+function consoleHead() {
+  return `<div class="c-head">
+      <div><div class="lbl">Core integrity</div><div class="big">17<small> / 20</small></div></div>
+      <div class="bits"><div class="lbl">Bits</div><div class="big">214</div><div class="gain">+14</div></div>
+      <div class="integ inset"><i style="width:85%"></i></div>
+    </div>`;
+}
+function boardView() {
+  const [c, g] = mkCanvas(W, H);
+  const consoleW = 212, top = 56, aw = W - consoleW - 30, ah = H - top - 10;
+  const s = Math.floor(Math.min(aw / COLS, ah / ROWS));
+  drawBoard(g, Math.round(22 + (aw - s * COLS) / 2), Math.round(top + (ah - s * ROWS) / 2), s);
+  const st = document.getElementById('stage'); st.append(c);
+  st.insertAdjacentHTML('beforeend', `${topStrip()}
+  <div class="console">${consoleHead()}
+    <div class="tabs"><div>DEPLOY</div><div class="on">ASSET</div><div>LOG</div></div>
+    <div class="asset">
+      <div class="a-top"><div class="ic inset" id="aicon"></div><div><div class="a-name">SANDBOX</div><div class="a-tier"><span class="role">AREA</span>MK II · C-04 · 9 PURGED</div></div></div>
+      <div class="stats"><div class="inset"><span>Payload</span>30</div><div class="inset"><span>Field</span>1.0</div><div class="inset"><span>Reach</span>4.5</div><div class="inset"><span>Cycle</span>2.2s</div></div>
+      <div class="seg inset"><div class="on">FIRST</div><div>LAST</div><div>STRONG</div><div>NEAR</div></div>
+      <div class="lbl">Choose a branch</div>
+      <div class="branches">
+        <div class="br raised on"><b>CLUSTER</b><span>Field splits into 4 cells. Clears swarms.</span></div>
+        <div class="br raised"><b>REMOTE</b><span>Relay mast. Much longer reach.</span></div>
+      </div>
+      <div class="actions"><div class="btn raised ghost">SELL +106</div><div class="btn raised primary">INSTALL <span class="cost inset">◆ 85</span></div></div>
+    </div>
+    <div class="c-foot"><span class="t">21:04:17</span> WRM 0x3A purged · <u>INSP C-07</u> · +2</div>
+  </div><div class="atmo"></div>`);
+  document.getElementById('aicon').append(icon((g, x, y, s) => sandbox(g, x, y, s, 2)));
+}
+
+function towersView() {
+  const [c, g] = mkCanvas(W, H);
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  const s = 62;
+  const head = (t, x, y) => { g.fillStyle = C.ink; g.font = '600 9px IBM Plex Mono'; g.textAlign = 'left'; g.fillText(t, x, y); g.strokeStyle = '#252b33'; g.beginPath(); g.moveTo(x, y + 5); g.lineTo(W - 16, y + 5); g.stroke(); };
+  const label = (t, x, y, col = C.mute, size = 7.5) => { g.fillStyle = col; g.font = `500 ${size}px IBM Plex Mono`; g.textAlign = 'center'; g.fillText(t, x, y); };
+  const tile = (x, y) => { g.fillStyle = '#0e1115'; g.fillRect(x - s * 0.55, y - s * 0.55, s * 1.1, s * 1.05); g.fillStyle = 'rgba(210,225,240,0.1)'; for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.fillRect(x + dx * s * 0.5 - 0.75, y + dy * s * 0.48 - 0.75, 1.5, 1.5); };
+  head('DEFENSES · ROLE COLOR · TIERS GROW TALLER AND ADD MODULES', 16, 38);
+  const row = [
+    ['INSPECTOR', 'DAMAGE', C.dmg, 'MK I', (x, y) => inspector(g, x, y, s, 1)], ['', '', '', 'MK II', (x, y) => inspector(g, x, y, s, 2)], ['', '', '', 'MK III', (x, y) => inspector(g, x, y, s, 3)],
+    ['RATE LIMITER', 'SUPPORT', C.sup, 'MK I', (x, y) => limiter(g, x, y, s, 1)], ['', '', '', 'MK II', (x, y) => limiter(g, x, y, s, 2)], ['', '', '', 'MK III', (x, y) => limiter(g, x, y, s, 3)],
+    ['SANDBOX', 'AREA', C.area, 'MK I', (x, y) => sandbox(g, x, y, s, 1)], ['', '', '', 'MK II', (x, y) => sandbox(g, x, y, s, 2)], ['', '', '', 'CLUSTER', (x, y) => sandbox(g, x, y, s, 3, 'cluster')], ['', '', '', 'REMOTE', (x, y) => sandbox(g, x, y, s, 3, 'remote')],
+  ];
+  row.forEach(([name, role, col, tier, fn], i) => { const x = 50 + i * 79, y = 112; tile(x, y); fn(x, y + 4); label(tier, x, y + s * 0.5 + 16); if (name) { label(name, x + 79, 58, C.ink, 8.5); label(role, x + 79, 69, col, 7); } });
+  head('MALWARE · FLOATS ABOVE THE LINK · HEALTH IS LAYERS', 16, 205);
+  const row2 = [
+    ['WORM', '3 LAYERS', (x, y) => worm(g, x, y, s, 3)], ['', '2', (x, y) => worm(g, x, y, s, 2)], ['', '1', (x, y) => worm(g, x, y, s, 1)], ['', 'PURGED', (x, y) => shatter(g, x, y, s)],
+    ['SPYWARE', '2 LAYERS', (x, y) => spyware(g, x, y, s, 2)], ['', '1', (x, y) => spyware(g, x, y, s, 1)],
+    ['TROJAN', 'DISGUISED', (x, y) => trojan(g, x, y, s, false)], ['', 'REVEALED', (x, y) => trojan(g, x, y, s, true, 4)], ['', 'BREAKING', (x, y) => trojan(g, x, y, s, true, 1)], ['', 'PAYLOAD', (x, y) => { worm(g, x - 12, y - 4, s * 0.75, 1); worm(g, x + 11, y, s * 0.75, 1); worm(g, x - 2, y + 14, s * 0.75, 1); }],
+  ];
+  row2.forEach(([name, tier, fn], i) => { const x = 50 + i * 79, y = 278; tile(x, y); g.fillStyle = '#06080a'; g.fillRect(x - s * 0.55, y - s * 0.12, s * 1.1, s * 0.3); fn(x, y + 4); label(tier, x, y + s * 0.5 + 16); if (name) label(name, x, 232, C.ink, 8.5); });
+  document.getElementById('stage').append(c);
+  document.getElementById('stage').insertAdjacentHTML('beforeend', '<div class="title">V2 · REFERENCE SHEET</div><div class="atmo"></div>');
+}
+
+function uiView() {
+  const card = (kind, name, role, col, cost, poor) => `<div class="card raised${poor ? ' poor' : ''}" style="--rc:${col}"><div class="ic inset" data-k="${kind}"></div><div><b>${name}</b><small style="color:${col}">${role}</small></div><span class="cost inset">◆ ${cost}</span></div>`;
+  document.getElementById('stage').insertAdjacentHTML('beforeend', `
+  <div class="uisheet">
+    <div class="col">
+      <div class="h">PRIMARY BUTTON · STATES</div>
+      <div class="states">
+        <figure><div class="btn raised primary">INSTALL <span class="cost inset">◆ 85</span></div><figcaption>NORMAL</figcaption></figure>
+        <figure><div class="btn raised primary hover">INSTALL <span class="cost inset">◆ 85</span></div><figcaption>HOVER</figcaption></figure>
+        <figure><div class="btn raised primary pressed">INSTALL <span class="cost inset">◆ 85</span></div><figcaption>PRESSED</figcaption></figure>
+        <figure><div class="btn disabled">INSTALL <span class="cost inset">◆ 85</span></div><figcaption>CAN'T AFFORD</figcaption></figure>
+      </div>
+      <div class="h">SECONDARY · TOGGLES</div>
+      <div class="states">
+        <figure><div class="btn raised ghost">SELL +106</div><figcaption>SECONDARY</figcaption></figure>
+        <figure><div class="btn raised" style="border-color:var(--hot);color:var(--hot)">CONFIRM SELL</div><figcaption>CONFIRM</figcaption></figure>
+        <figure><div class="seg inset" style="grid-template-columns:repeat(2,1fr)"><div class="on">FIRST</div><div>LAST</div></div><figcaption>SEGMENTED</figcaption></figure>
+        <figure><div style="display:flex;gap:5px;justify-content:center"><div class="sq raised">${SVG.pause}</div><div class="sq raised on" style="font-size:10px;font-weight:600">2×</div></div><figcaption>TOP-LEFT</figcaption></figure>
+      </div>
+      <div class="h">ROLES</div>
+      <div class="roles"><span style="--rc:var(--dmg)">DAMAGE</span><span style="--rc:var(--area)">AREA</span><span style="--rc:var(--sup)">SUPPORT</span><span style="--rc:var(--hot)">THREAT</span></div>
+      <div class="h">EVENT LOG</div>
+      <div class="log inset">
+        <div><span class="t">21:04:17</span><span>WRM 0x3A purged · <u>INSP C-07</u> · +2</span></div>
+        <div><span class="t">21:04:16</span><span><b>WAN-2</b> · spyware detected</span></div>
+        <div><span class="t">21:04:12</span><span><s>RATE LIMITER C-02</s> upgraded to MK II</span></div>
+        <div><span class="t">21:03:58</span><span><b>CORE</b> integrity −1 · leak via WAN-1</span></div>
+      </div>
+    </div>
+    <div class="console" style="position:relative">${consoleHead()}
+      <div class="tabs"><div class="on">DEPLOY</div><div>ASSET</div><div>LOG</div></div>
+      <div class="deploy">
+        ${card('i', 'INSPECTOR', 'DAMAGE', 'var(--dmg)', 45)}
+        ${card('l', 'RATE LIMITER', 'SUPPORT', 'var(--sup)', 60)}
+        ${card('s', 'SANDBOX', 'AREA', 'var(--area)', 95)}
+        ${card('l', 'LOCKED', 'SECTOR 02', 'var(--mute)', '—', true)}
+      </div>
+      <div style="margin-top:auto;padding:8px 10px;border-top:1px solid var(--edge)"><div class="btn raised primary" style="height:36px;font-size:10px">START WAVE 08</div></div>
+    </div>
+  </div><div class="atmo" style="opacity:0.6"></div>`);
+  document.querySelectorAll('.card .ic').forEach((el, i) => { const k = el.dataset.k; el.append(icon((g, x, y, s) => (k === 'i' ? inspector(g, x, y, s, 1) : k === 'l' ? limiter(g, x, y, s, i === 3 ? 1 : 1) : sandbox(g, x, y, s, 1)), 40)); if (i === 3) el.style.opacity = '0.25'; });
+}
+
+Promise.all(['400', '500', '600'].map((w) => document.fonts.load(`${w} 10px "IBM Plex Mono"`)).concat(document.fonts.load('600 10px "IBM Plex Sans Condensed"'))).finally(() => {
+  ({ board: boardView, towers: towersView, ui: uiView })[VIEW]();
+  document.body.dataset.ready = '1';
+});
+</script>
+</body>
+</html>

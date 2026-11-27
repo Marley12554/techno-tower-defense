@@ -46,9 +46,20 @@ Malware: Worm, Spyware, Trojan (in the slice); later Rootkit, Encrypted packet, 
 
 Structure: 5 worlds of about 6 maps, 15 to 25 waves each, one new malware and its answer per world, boss map at the end. Endless mode later.
 
-## Visual direction
+## Visual direction (overhaul agreed, not built yet)
 
-Dark "security ops" circuit board, not Circuit Jam or the ball-sim editor look. **Cool colors (cyan, green, blue) are the player's network; hot colors (magenta, red, amber) are threats.** Readability first: path, threats, ranges and Core state always visible. Glows are pre-rendered into sprites, never live `shadowBlur`.
+The step 2 slice looked like "a tower defense with a neon skin" and is being replaced. Agreed direction, from two rounds of style frames in `design/frames/` (`v2.html` is current):
+
+- **Palette:** C's graphite and ice blue (clean, modern, secure). **Atmosphere:** B's scanlines and vignette at low strength, as a finish, spiking on events (Core hit, new threat). Not a mask over a flat scene.
+- **Depth, not glow:** tilted top-down volume (top face plus a visible front face, soft shadow down-right; the grid stays readable), material gradients with a lit top edge, a recessed traffic channel, raised infrastructure. Light comes only from active things (lenses, cores, beams, threats) and pools on the board.
+- **A network, not a motherboard:** ingress nodes (WAN-1...), the Core as a crown-jewel server (CORE · DC-01), hatched isolated subnets, a DMZ of racks, endpoints. Coordinates on the board edges.
+- **Role colors** (cool = friendly, hot = threat still holds): Damage cyan (Inspector, Beam Emitter), Area teal (Sandbox, Arc Coil), Support violet (anything that helps other towers directly or indirectly: Rate Limiter, Quarantine, Honeypot, Scanner, Decryptor, Overclock Relay). Same role = same color, told apart by silhouette.
+- **Towers are objects that look like their function, never turrets:** Inspector = sensor with a lens that beam-locks and brackets its target; Rate Limiter = iris that pinches the link; Sandbox = containment box that isolates then detonates. Tiers grow taller and add modules; branches have their own silhouettes (Remote = relay mast).
+- **Malware are floating packets; health is layers:** each hit strips a shell, so it shrinks and runs hotter until the last layer shatters. No health bars. Trojans are disguised in friendly colors with a hairline red seam.
+- **UI components:** three surface levels (base, raised, inset). Primary buttons are raised with an accent border, lit top strip and inset cost chip, with distinct hover, pressed and disabled states. No flat solid-fill buttons, no glass, no dashed lines.
+- **Layout:** top strip (square menu, pause and speed buttons at top left, sector, next wave, wave count) and a persistent right console (Deploy / Asset / Log tabs, newest log line in the footer). Accepted: the board shrinks ~15-20% on phones.
+- **Kill feedback:** last layer shatters with a flash and pitch-varied sound; kills close together merge into one bits token ("+14"); no damage numbers.
+- **Entering a map:** a short "secure session" handshake and zoom into the network, not a side wipe.
 
 ## Decisions made so far
 
@@ -57,10 +68,15 @@ Dark "security ops" circuit board, not Circuit Jam or the ball-sim editor look. 
 - Drag from a card to place; tapping a card (or pressing 1/2/3) arms it for tap-to-place, which stays armed for chain-building. On touch, a dragged ghost sits ~0.7 cells above the finger, with a row/column crosshair.
 - Upgrades: tap a card to preview (stat diffs, range ring), tap its price to buy. Desktop previews on hover. Selling needs a confirming second tap.
 - Stars: win with full integrity = 3, with `stars[1]`+ = 2, otherwise 1.
+- **Renames for the overhaul:** Packet Filter -> **Inspector**, Throttle -> **Rate Limiter**, Sandbox Mortar -> **Sandbox** (branches **Cluster** / **Remote**).
+- **Core repair:** paid repair between waves, getting pricier each time (option A). Not built yet.
+- **Multi-cell towers:** wanted later. Standard towers stay 1x1, specific heavy towers can be 2x2, no 3x3 on 18x10 maps, upgrades never change footprint.
+- **Malware behavior ideas (suggested, not confirmed):** worms self-replicate if not killed fast; spyware steals bits and then tries to leave, killing it on the way out returns them.
+- **Known slice bugs to fix in the overhaul:** route tie-break isn't mirror-symmetric (fixed E,S,N,W order); the placement preview looks like a second route; the route starts outside the board and isn't clipped; malware use random lateral offsets instead of lanes.
 
 ## Status
 
-Step 2 (polished vertical slice) is built: one map (Boot Sector, 15 waves), 3 towers, 3 malware, drag-to-place with ghost/snap/route preview/invalid reasons, the integration animation (traces grow to neighbors, pulse runs through the network, solder sparks, glow ramp, snap sound), the mortar's branching tree, inspector with targeting and sell, banners, bits flying to the counter, core glitch/alarm, title/briefing/pause/results screens, tutorial coach marks, new-threat briefs, synth sound throughout. **Waiting on the user's playtest** before step 3.
+Step 2 (polished vertical slice) is built: one map (Boot Sector, 15 waves), 3 towers, 3 malware, drag-to-place with ghost/snap/route preview/invalid reasons, the integration animation (traces grow to neighbors, pulse runs through the network, solder sparks, glow ramp, snap sound), the mortar's branching tree, inspector with targeting and sell, banners, bits flying to the counter, core glitch/alarm, title/briefing/pause/results screens, tutorial coach marks, new-threat briefs, synth sound throughout. The user playtested it and asked for a full visual/UI overhaul (see Visual direction). **Next: build the overhaul** in the v2 style once the user signs off on the v2 frames.
 
 The level JSON format and a heuristic bot were started early because they were cheap (step 4 is not otherwise done).
 
