@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tower tiers v3</title>
+<!-- Round 3: towers that are structurally rebuilt at every tier. Same palette and lighting as v2. -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0a0c0f; }
+  canvas { position: absolute; inset: 0; }
+  .atmo { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0 1px, transparent 1px 3px), radial-gradient(ellipse at 50% 50%, transparent 62%, rgba(0,0,0,0.45)); }
+</style>
+</head>
+<body>
+<script>
+const W = innerWidth, H = innerHeight, DPR = 2;
+const C = { bg: '#0a0c0f', ink: '#e2e9f0', dim: '#7a8592', mute: '#4c5662', ice: '#cfe6ff', dmg: '#46c8ff', area: '#35e0b2', sup: '#a58bff', hot: '#ff4d4f' };
+const Q = 0.86; // depth squash of the tilted view
+function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+function mix(h1, h2, t) { const a = parseInt(h1.slice(1), 16), b = parseInt(h2.slice(1), 16); const c = (s) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t); return '#' + [c(16), c(8), c(0)].map((v) => v.toString(16).padStart(2, '0')).join(''); }
+function polyPath(g, pts) { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.closePath(); }
+const ngonPts = (x, y, r, n, rot) => Array.from({ length: n }, (_, i) => { const a = rot + i * Math.PI * 2 / n; return [x + Math.cos(a) * r, y + Math.sin(a) * r * Q]; });
+const rectPts = (x, y, w, d) => [[x - w, y - d], [x + w, y - d], [x + w, y + d], [x - w, y + d]];
+const RECT = (w, d) => (x, y) => (g) => polyPath(g, rectPts(x, y, w, d));
+const CYL = (r) => (x, y) => (g) => { g.beginPath(); g.ellipse(x, y, r, r * Q, 0, 0, Math.PI * 2); };
+const HEX = (r) => (x, y) => (g) => polyPath(g, ngonPts(x, y, r, 6, Math.PI / 6));
+const OCT = (r) => (x, y) => (g) => polyPath(g, ngonPts(x, y, r, 8, Math.PI / 8));
+
+// Materials: bare graphite (Mk I), plated (Mk II), reinforced (Mk III)
+const MAT = {
+  bare: { top: ['#262c34', '#1b2027'], side: ['#151a1f', '#0a0c0f'] },
+  plate: { top: ['#2e353f', '#20262e'], side: ['#1a1f26', '#0b0d10'] },
+  heavy: { top: ['#353d48', '#232a33'], side: ['#1e242c', '#0c0e12'] },
+  dark: { top: ['#171b20', '#121519'], side: ['#0e1114', '#08090b'] },
+};
+
+function shadow(g, path, h) { g.save(); g.translate(h * 0.5, h * 0.7); g.filter = `blur(${Math.max(1.5, h * 0.3)}px)`; path(g); g.fillStyle = 'rgba(0,0,0,0.5)'; g.fill(); g.restore(); }
+/** Extrudes a footprint shape `h` px up. Returns the y of the top face. */
+function solid(g, shape, x, y, h, o = {}) {
+  const m = o.mat || MAT.bare;
+  if (!o.noShadow) shadow(g, shape(x, y), h);
+  for (let k = 0; k <= h; k += 0.5) { shape(x, y - k)(g); g.fillStyle = mix(m.side[1], m.side[0], Math.pow(k / Math.max(1, h), 0.7)); g.fill(); }
+  const p = shape(x, y - h); p(g);
+  const grd = g.createLinearGradient(x - h - 20, y - h - 20, x + 20, y - h + 20); grd.addColorStop(0, m.top[0]); grd.addColorStop(1, m.top[1]);
+  g.fillStyle = grd; g.fill();
+  g.save(); p(g); g.clip(); g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 2; g.translate(0.7, 1); p(g); g.stroke(); g.restore();
+  if (o.rim) { p(g); g.strokeStyle = rgba(o.rim, o.rimA ?? 0.5); g.lineWidth = 1; g.stroke(); }
+  return y - h;
+}
+function pool(g, x, y, r, col, a) { g.save(); g.globalCompositeOperation = 'lighter'; const grd = g.createRadialGradient(x, y, 0, x, y, r); grd.addColorStop(0, rgba(col, a)); grd.addColorStop(1, rgba(col, 0)); g.fillStyle = grd; g.beginPath(); g.ellipse(x, y, r, r * Q, 0, 0, 7); g.fill(); g.restore(); }
+function light(g, x, y, r, col, a = 1) {
+  g.save(); g.globalCompositeOperation = 'lighter'; const grd = g.createRadialGradient(x, y, 0, x, y, r * 3.4); grd.addColorStop(0, rgba(col, 0.6 * a)); grd.addColorStop(0.3, rgba(col, 0.18 * a)); grd.addColorStop(1, rgba(col, 0)); g.fillStyle = grd; g.beginPath(); g.arc(x, y, r * 3.4, 0, 7); g.fill(); g.restore();
+  g.save(); g.fillStyle = mix(col, '#ffffff', 0.5); g.beginPath(); g.ellipse(x, y, r, r * Q, 0, 0, 7); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.ellipse(x - r * 0.25, y - r * 0.25, r * 0.42, r * 0.36, 0, 0, 7); g.fill(); g.restore();
+}
+/** Glowing conduit along a path. */
+function conduit(g, pathFn, col, w = 1.2, a = 1) {
+  g.save(); g.globalCompositeOperation = 'lighter'; pathFn(g); g.strokeStyle = rgba(col, 0.22 * a); g.lineWidth = w * 4; g.lineCap = 'round'; g.stroke(); pathFn(g); g.strokeStyle = rgba(mix(col, '#ffffff', 0.35), 0.95 * a); g.lineWidth = w; g.stroke(); g.restore();
+}
+const seg = (x1, y1, x2, y2) => (g) => { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); };
+/** Lower-half band of a cylinder at height h: the part of a ring you can see on its front. */
+const band = (x, y, r, h) => (g) => { g.beginPath(); g.ellipse(x, y - h, r, r * Q, 0, 0.08, Math.PI - 0.08); };
+/** Front edge of a regular polygon at height h. */
+const frontEdge = (x, y, r, n, rot, h) => (g) => { const p = ngonPts(x, y - h, r, n, rot).filter(([, py]) => py >= y - h - 0.01); p.sort((a, b) => a[0] - b[0]); g.beginPath(); g.moveTo(p[0][0], p[0][1]); for (const q of p.slice(1)) g.lineTo(q[0], q[1]); };
+function vents(g, x0, x1, yTop, n, hh) { g.save(); for (let i = 0; i < n; i++) { const x = x0 + (i + 0.5) * (x1 - x0) / n; g.fillStyle = '#05070a'; g.fillRect(x - 0.9, yTop, 1.8, hh); g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(x + 0.9, yTop, 0.6, hh); } g.restore(); }
+function strut(g, x1, y1, x2, y2, w) { g.save(); g.lineCap = 'round'; g.strokeStyle = '#0b0e12'; g.lineWidth = w + 1.5; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.strokeStyle = '#2a313a'; g.lineWidth = w; g.stroke(); g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x1, y1 - w * 0.3); g.lineTo(x2, y2 - w * 0.3); g.stroke(); g.restore(); }
+function lens(g, x, y, r, col, big = false) {
+  g.save(); g.beginPath(); g.ellipse(x, y, r, r * Q, 0, 0, 7); g.fillStyle = '#040b10'; g.fill(); g.strokeStyle = rgba(col, 0.6); g.lineWidth = 1; g.stroke();
+  if (big) { g.beginPath(); g.ellipse(x, y, r * 0.7, r * 0.7 * Q, 0, 0, 7); g.strokeStyle = rgba(col, 0.35); g.stroke(); }
+  g.restore(); light(g, x, y, r * 0.42, col);
+}
+
+/* ================================================================ INSPECTOR */
+function inspector(g, x, y, s, tier) {
+  const col = C.dmg;
+  if (tier === 1) { // PROBE: a lone sensor on a small pedestal
+    pool(g, x, y, s * 0.55, col, 0.12);
+    const t = solid(g, HEX(s * 0.22), x, y, s * 0.08, { rim: col, rimA: 0.35 });
+    const n = solid(g, CYL(s * 0.07), x, t, s * 0.08, { noShadow: true });
+    const hd = solid(g, CYL(s * 0.11), x, n, s * 0.04, { noShadow: true, rim: col });
+    lens(g, x, hd, s * 0.075, col);
+    return;
+  }
+  if (tier === 2) { // SENTINEL: armored body, heat sinks, hooded sensor head
+    pool(g, x, y, s * 0.7, col, 0.16);
+    solid(g, HEX(s * 0.35), x, y, s * 0.045, { mat: MAT.dark, rim: col, rimA: 0.25 });
+    // heat-sink fin stacks on both flanks
+    for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) solid(g, RECT(s * 0.012, s * 0.08), x + sx * (s * 0.27 + i * s * 0.022), y - s * 0.045, s * 0.15, { mat: MAT.plate, noShadow: i > 0 });
+    const b = solid(g, HEX(s * 0.25), x, y - s * 0.045, s * 0.17, { mat: MAT.plate, rim: col, rimA: 0.4 });
+    conduit(g, frontEdge(x, y - s * 0.045, s * 0.25, 6, Math.PI / 6, s * 0.07), col, 1.1);
+    g.save(); polyPath(g, ngonPts(x, b, s * 0.17, 6, Math.PI / 6)); g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 1; g.stroke(); g.restore(); // panel seam
+    // sensor housing with a hood over the main lens and a secondary lens
+    const hd = solid(g, RECT(s * 0.14, s * 0.1), x, b + s * 0.01, s * 0.09, { mat: MAT.heavy, noShadow: true, rim: col, rimA: 0.35 });
+    solid(g, RECT(s * 0.1, s * 0.03), x - s * 0.02, hd - s * 0.06, s * 0.02, { mat: MAT.dark, noShadow: true });
+    lens(g, x - s * 0.03, hd, s * 0.075, col, true);
+    lens(g, x + s * 0.09, hd + s * 0.02, s * 0.03, col);
+    return;
+  }
+  // ARRAY: plinth, two-stage column, three sensor pods on arms, crown halo, antenna
+  pool(g, x, y, s * 0.85, col, 0.2);
+  solid(g, OCT(s * 0.46), x, y, s * 0.05, { mat: MAT.dark, rim: col, rimA: 0.3 });
+  for (let i = 0; i < 8; i++) { const a = Math.PI / 8 + i * Math.PI / 4; if (Math.sin(a) > -0.3) light(g, x + Math.cos(a) * s * 0.4, y - s * 0.05 + Math.sin(a) * s * 0.4 * Q, s * 0.012, col, 0.6); }
+  const base = y - s * 0.05;
+  const podAngles = [-Math.PI / 2, Math.PI / 6, Math.PI * 5 / 6];
+  const podAt = (a) => [x + Math.cos(a) * s * 0.36, base + Math.sin(a) * s * 0.36 * Q];
+  const drawPod = (a) => { const [px, py] = podAt(a); strut(g, x + Math.cos(a) * s * 0.18, base + Math.sin(a) * s * 0.18 * Q - s * 0.2, px, py - s * 0.15, s * 0.035); const pt = solid(g, CYL(s * 0.06), px, py, s * 0.15, { mat: MAT.plate, rim: col, rimA: 0.4 }); lens(g, px, pt, s * 0.035, col); };
+  drawPod(podAngles[0]); // back pod first
+  const lower = solid(g, HEX(s * 0.3), x, base, s * 0.13, { mat: MAT.plate, rim: col, rimA: 0.35 });
+  vents(g, x - s * 0.18, x + s * 0.18, base + s * 0.3 * Q * 0.5 - s * 0.11, 7, s * 0.06);
+  const upper = solid(g, HEX(s * 0.21), x, lower, s * 0.16, { mat: MAT.heavy, noShadow: true, rim: col, rimA: 0.45 });
+  for (const sx of [-1, 1]) conduit(g, seg(x + sx * s * 0.105, lower + s * 0.21 * Q * 0.5, x + sx * s * 0.105, upper + s * 0.21 * Q * 0.5), col, 1.1);
+  conduit(g, frontEdge(x, lower, s * 0.21, 6, Math.PI / 6, s * 0.155), col, 1);
+  const head = solid(g, CYL(s * 0.15), x, upper, s * 0.06, { mat: MAT.heavy, noShadow: true, rim: col, rimA: 0.6 });
+  lens(g, x, head, s * 0.1, col, true);
+  // antenna
+  strut(g, x + s * 0.09, head - s * 0.02, x + s * 0.09, head - s * 0.24, s * 0.018); light(g, x + s * 0.09, head - s * 0.25, s * 0.016, col);
+  // crown halo floating above the head
+  g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = rgba(col, 0.25); g.lineWidth = 4; g.beginPath(); g.ellipse(x, head - s * 0.12, s * 0.22, s * 0.22 * Q * 0.55, 0, 0, 7); g.stroke(); g.strokeStyle = rgba('#dff6ff', 0.85); g.lineWidth = 1; g.stroke(); g.restore();
+  drawPod(podAngles[1]); drawPod(podAngles[2]);
+}
+
+/* ============================================================= RATE LIMITER */
+function iris(g, x, y, r, blades, col, double = false) {
+  g.save(); g.beginPath(); g.ellipse(x, y, r, r * Q, 0, 0, 7); g.fillStyle = '#0b0912'; g.fill(); g.clip();
+  for (let k = 0; k < blades; k++) { const a = k * Math.PI * 2 / blades; polyPath(g, [[x + Math.cos(a) * r * 1.1, y + Math.sin(a) * r * 1.1 * Q], [x + Math.cos(a + 1.2) * r * 0.22, y + Math.sin(a + 1.2) * r * 0.22 * Q], [x + Math.cos(a + 0.75) * r * 1.15, y + Math.sin(a + 0.75) * r * 1.15 * Q]]); g.fillStyle = k % 2 ? '#1d1a28' : '#272334'; g.fill(); g.strokeStyle = rgba(col, 0.5); g.lineWidth = 0.7; g.stroke(); }
+  if (double) { g.beginPath(); g.ellipse(x, y, r * 0.55, r * 0.55 * Q, 0, 0, 7); g.strokeStyle = rgba(col, 0.8); g.lineWidth = 1.2; g.stroke(); }
+  g.restore();
+  g.save(); g.beginPath(); g.ellipse(x, y, r, r * Q, 0, 0, 7); g.strokeStyle = rgba(col, 0.75); g.lineWidth = 1.2; g.stroke(); g.restore();
+  light(g, x, y, r * 0.16, col);
+}
+function limiter(g, x, y, s, tier) {
+  const col = C.sup;
+  if (tier === 1) { // GATE: a single iris drum
+    pool(g, x, y, s * 0.55, col, 0.12);
+    const t = solid(g, CYL(s * 0.23), x, y, s * 0.09, { rim: col, rimA: 0.35 });
+    iris(g, x, t, s * 0.17, 6, col);
+    return;
+  }
+  if (tier === 2) { // CLAMP: vented drum gripped by four clamp arms
+    pool(g, x, y, s * 0.72, col, 0.16);
+    solid(g, CYL(s * 0.36), x, y, s * 0.04, { mat: MAT.dark, rim: col, rimA: 0.25 });
+    const b0 = y - s * 0.04;
+    const armAt = (a) => [x + Math.cos(a) * s * 0.29, b0 + Math.sin(a) * s * 0.29 * Q];
+    const arm = (a) => { const [ax, ay] = armAt(a); const t = solid(g, RECT(s * 0.055, s * 0.045), ax, ay, s * 0.19, { mat: MAT.heavy, rim: col, rimA: 0.4 }); light(g, ax, t, s * 0.018, col, 0.9); };
+    arm(-Math.PI * 3 / 4); arm(-Math.PI / 4);
+    const d = solid(g, CYL(s * 0.25), x, b0, s * 0.14, { mat: MAT.plate, rim: col, rimA: 0.4 });
+    for (let i = 0; i < 9; i++) { const a = 0.35 + i * (Math.PI - 0.7) / 8; const vx = x + Math.cos(a) * s * 0.25, vy = b0 + Math.sin(a) * s * 0.25 * Q; g.fillStyle = '#05060a'; g.fillRect(vx - 0.8, vy - s * 0.11, 1.6, s * 0.06); }
+    conduit(g, band(x, b0, s * 0.25, s * 0.03), col, 1.1);
+    iris(g, x, d, s * 0.2, 8, col, true);
+    arm(Math.PI * 3 / 4); arm(Math.PI / 4);
+    return;
+  }
+  // CHOKEPOINT: stacked drums, double iris, four field pylons caging a floating energy ring
+  pool(g, x, y, s * 0.88, col, 0.22);
+  solid(g, OCT(s * 0.46), x, y, s * 0.05, { mat: MAT.dark, rim: col, rimA: 0.3 });
+  const b0 = y - s * 0.05;
+  const pyl = (a) => [x + Math.cos(a) * s * 0.4, b0 + Math.sin(a) * s * 0.4 * Q];
+  const ringY = b0 - s * 0.36;
+  const pylon = (a) => { const [px, py] = pyl(a); const t = solid(g, RECT(s * 0.04, s * 0.035), px, py, s * 0.38, { mat: MAT.heavy, rim: col, rimA: 0.45 }); conduit(g, seg(px, py + s * 0.03, px, t + s * 0.04), col, 0.9, 0.8); light(g, px, t, s * 0.025, col); };
+  pylon(-Math.PI * 3 / 4); pylon(-Math.PI / 4);
+  // back half of the energy ring
+  conduit(g, (gg) => { gg.beginPath(); gg.ellipse(x, ringY, s * 0.4, s * 0.4 * Q, 0, Math.PI, Math.PI * 2); }, col, 1.2);
+  const lo = solid(g, CYL(s * 0.31), x, b0, s * 0.11, { mat: MAT.plate, rim: col, rimA: 0.35 });
+  conduit(g, band(x, b0, s * 0.31, s * 0.055), col, 1.1);
+  const up = solid(g, CYL(s * 0.25), x, lo, s * 0.12, { mat: MAT.heavy, noShadow: true, rim: col, rimA: 0.5 });
+  for (let i = 0; i < 9; i++) { const a = 0.35 + i * (Math.PI - 0.7) / 8; const vx = x + Math.cos(a) * s * 0.25, vy = lo + Math.sin(a) * s * 0.25 * Q; g.fillStyle = '#05060a'; g.fillRect(vx - 0.8, vy - s * 0.1, 1.6, s * 0.06); }
+  iris(g, x, up, s * 0.21, 10, col, true);
+  pylon(Math.PI * 3 / 4); pylon(Math.PI / 4);
+  // front half of the ring passes in front of everything
+  conduit(g, (gg) => { gg.beginPath(); gg.ellipse(x, ringY, s * 0.4, s * 0.4 * Q, 0, 0, Math.PI); }, col, 1.2);
+}
+
+/* ================================================================== SANDBOX */
+function well(g, x, y, w, d, col, glass = false, lift = 0) {
+  g.save(); polyPath(g, rectPts(x, y, w, d)); g.fillStyle = '#030d0a'; g.fill(); g.strokeStyle = 'rgba(0,0,0,0.85)'; g.lineWidth = 2; g.stroke(); g.restore();
+  const cy = y - lift;
+  g.save(); polyPath(g, [[x, cy - d * 0.75], [x + w * 0.6, cy], [x, cy + d * 0.75], [x - w * 0.6, cy]]); g.fillStyle = rgba(col, 0.12); g.fill(); g.strokeStyle = rgba(col, 0.95); g.lineWidth = 1; g.stroke(); g.restore();
+  light(g, x, cy, Math.min(w, d) * 0.28, col);
+  if (glass) { g.save(); polyPath(g, rectPts(x, y, w, d)); g.strokeStyle = rgba(col, 0.45); g.lineWidth = 1; g.stroke(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = 'rgba(255,255,255,0.12)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - w * 0.8, y + d * 0.2); g.lineTo(x - w * 0.2, y - d * 0.8); g.stroke(); g.restore(); }
+}
+function vaultBody(g, x, y, s, col, opts = {}) {
+  // reinforced containment vault: plate, body with bands, optional corner pillars
+  const b0 = y - s * 0.04;
+  solid(g, RECT(s * 0.34, s * 0.3), x, y, s * 0.04, { mat: MAT.dark, rim: col, rimA: 0.25 });
+  const pil = (sx, sy) => { const px = x + sx * s * 0.26, py = b0 + sy * s * 0.225; const t = solid(g, RECT(s * 0.05, s * 0.045), px, py, s * 0.25, { mat: MAT.heavy, rim: col, rimA: 0.4 }); light(g, px, t, s * 0.018, col, 0.9); };
+  if (opts.pillars) { pil(-1, -1); pil(1, -1); }
+  const t = solid(g, RECT(s * 0.25, s * 0.215), x, b0, s * 0.17, { mat: MAT.plate, rim: col, rimA: 0.4 });
+  const fy = b0 + s * 0.215; // front face bottom
+  for (const k of [0.35, 0.7]) { g.strokeStyle = 'rgba(0,0,0,0.65)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x - s * 0.25, fy - s * 0.17 * k); g.lineTo(x + s * 0.25, fy - s * 0.17 * k); g.stroke(); }
+  conduit(g, seg(x - s * 0.18, fy - s * 0.085, x + s * 0.18, fy - s * 0.085), col, 1.1);
+  well(g, x, t, s * 0.16, s * 0.135, col, true, s * 0.06);
+  if (opts.pillars) { pil(-1, 1); pil(1, 1); }
+  return t;
+}
+function sandbox(g, x, y, s, stage) {
+  const col = C.area;
+  if (stage === 'mk1') { // CELL
+    pool(g, x, y, s * 0.55, col, 0.12);
+    const t = solid(g, RECT(s * 0.21, s * 0.18), x, y, s * 0.12, { rim: col, rimA: 0.35 });
+    well(g, x, t, s * 0.12, s * 0.1, col);
+    return;
+  }
+  if (stage === 'mk2') { pool(g, x, y, s * 0.72, col, 0.16); vaultBody(g, x, y, s, col, { pillars: true }); return; }
+  if (stage === 'cluster1' || stage === 'cluster2') {
+    const big = stage === 'cluster2';
+    pool(g, x, y, s * (big ? 0.92 : 0.8), col, big ? 0.22 : 0.18);
+    const b0 = y - s * 0.04;
+    const sat = (sx, sy) => {
+      const px = x + sx * s * 0.36, py = b0 + sy * s * 0.31;
+      // pipe from the vault to the satellite
+      strut(g, x + sx * s * 0.16, b0 + sy * s * 0.12 - s * 0.06, px, py - s * 0.05, s * (big ? 0.045 : 0.032));
+      conduit(g, seg(x + sx * s * 0.16, b0 + sy * s * 0.12 - s * 0.07, px, py - s * 0.06), col, 0.8, 0.8);
+      const t = solid(g, RECT(s * (big ? 0.1 : 0.075), s * (big ? 0.085 : 0.065)), px, py, s * (big ? 0.16 : 0.11), { mat: big ? MAT.heavy : MAT.plate, rim: col, rimA: 0.45 });
+      if (big) well(g, px, t, s * 0.055, s * 0.045, col, false, s * 0.02); else light(g, px, t, s * 0.022, col);
+    };
+    solid(g, RECT(s * 0.46, s * 0.4), x, y, s * 0.035, { mat: MAT.dark, rim: col, rimA: 0.2 });
+    sat(-1, -1); sat(1, -1);
+    const t = solid(g, RECT(s * 0.22, s * 0.19), x, b0, s * 0.17, { mat: MAT.plate, rim: col, rimA: 0.45 });
+    conduit(g, seg(x - s * 0.15, b0 + s * 0.19 - s * 0.085, x + s * 0.15, b0 + s * 0.19 - s * 0.085), col, 1.1);
+    well(g, x, t, s * 0.14, s * 0.115, col, true, s * 0.05);
+    if (big) { // exhaust stack: the vault now vents spent payload
+      const st = solid(g, RECT(s * 0.045, s * 0.04), x + s * 0.13, t + s * 0.02, s * 0.2, { mat: MAT.heavy, noShadow: true, rim: col, rimA: 0.5 });
+      vents(g, x + s * 0.095, x + s * 0.165, st + s * 0.06, 3, s * 0.08); light(g, x + s * 0.13, st, s * 0.022, col);
+    }
+    sat(-1, 1); sat(1, 1);
+    return;
+  }
+  // REMOTE: the vault grows a relay mast, then a full lattice tower with a dish
+  const big = stage === 'remote2';
+  pool(g, x, y, s * (big ? 0.9 : 0.78), col, big ? 0.22 : 0.18);
+  const t = vaultBody(g, x - s * 0.04, y + s * 0.02, s * (big ? 0.92 : 0.95), col, { pillars: big });
+  const mx = x + s * 0.2, my = y - s * 0.2;
+  if (!big) {
+    const top = solid(g, RECT(s * 0.025, s * 0.022), mx, my, s * 0.55, { mat: MAT.heavy, rim: col, rimA: 0.45 });
+    conduit(g, seg(mx, my + s * 0.01, mx, top + s * 0.03), col, 0.8, 0.7);
+    g.save(); g.strokeStyle = rgba(col, 0.9); g.lineWidth = 1.6; g.beginPath(); g.ellipse(mx - s * 0.02, top, s * 0.12, s * 0.05, -0.5, Math.PI * 0.9, Math.PI * 2.1); g.stroke(); g.restore();
+    light(g, mx, top, s * 0.022, col);
+    return;
+  }
+  // lattice tower: four legs, cross-bracing, big dish with a feed horn, beacon
+  const legs = [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sy]) => [mx + sx * s * 0.08, my + sy * s * 0.07]);
+  const apex = [mx, my - s * 0.68];
+  solid(g, RECT(s * 0.11, s * 0.095), mx, my, s * 0.03, { mat: MAT.dark });
+  const lerp = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+  for (const [i, l] of legs.entries()) { if (i < 2) strut(g, l[0], l[1] - s * 0.03, apex[0], apex[1], s * 0.02); }
+  for (const k of [0.25, 0.5, 0.75]) { const a = lerp(legs[2], apex, k), b = lerp(legs[3], apex, k), c = lerp(legs[2], apex, k + 0.25), d = lerp(legs[3], apex, k + 0.25); strut(g, a[0], a[1], d[0], d[1], s * 0.01); strut(g, b[0], b[1], c[0], c[1], s * 0.01); }
+  for (const [i, l] of legs.entries()) { if (i >= 2) strut(g, l[0], l[1] - s * 0.03, apex[0], apex[1], s * 0.022); }
+  conduit(g, seg(mx, my - s * 0.04, apex[0], apex[1] + s * 0.06), col, 0.8, 0.7);
+  // dish
+  const dx = apex[0] - s * 0.05, dy = apex[1] + s * 0.06;
+  g.save(); g.beginPath(); g.ellipse(dx, dy, s * 0.2, s * 0.11, -0.45, 0, 7); const dg = g.createLinearGradient(dx - s * 0.2, dy - s * 0.1, dx + s * 0.2, dy + s * 0.1); dg.addColorStop(0, '#39424d'); dg.addColorStop(1, '#161a20'); g.fillStyle = dg; g.fill(); g.strokeStyle = rgba(col, 0.85); g.lineWidth = 1.2; g.stroke();
+  g.beginPath(); g.ellipse(dx, dy, s * 0.12, s * 0.065, -0.45, 0, 7); g.strokeStyle = 'rgba(0,0,0,0.5)'; g.stroke(); g.restore();
+  strut(g, dx, dy, dx - s * 0.04, dy - s * 0.14, s * 0.012); light(g, dx - s * 0.04, dy - s * 0.15, s * 0.024, col);
+  light(g, apex[0] + s * 0.02, apex[1] - s * 0.02, s * 0.018, C.hot, 0.8); // aviation beacon
+}
+
+/* ==================================================================== SHEET */
+const [cv, g] = (() => { const c = document.createElement('canvas'); c.width = W * DPR; c.height = H * DPR; c.style.width = W + 'px'; c.style.height = H + 'px'; document.body.prepend(c); const gg = c.getContext('2d'); gg.scale(DPR, DPR); return [c, gg]; })();
+function text(t, x, y, col, size, weight = 500, align = 'left', font = 'IBM Plex Mono') { g.fillStyle = col; g.font = `${weight} ${size}px ${font}`; g.textAlign = align; g.fillText(t, x, y); }
+function tile(x, y, s) {
+  // a patch of board under each tower so scale reads
+  g.fillStyle = '#0e1115'; g.fillRect(x - s * 0.62, y - s * 0.95, s * 1.24, s * 1.5);
+  g.fillStyle = 'rgba(210,225,240,0.12)';
+  for (const dx of [-0.5, 0.5]) for (const dy of [-0.5, 0.5]) g.fillRect(x + dx * s - 1, y + dy * s - 1, 2, 2);
+  g.strokeStyle = 'rgba(210,225,240,0.06)'; g.strokeRect(x - s * 0.5, y - s * 0.5 * Q, s, s * Q);
+}
+function draw() {
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  text('V3 · TOWER TIERS · EACH UPGRADE REBUILDS THE STRUCTURE', 24, 30, C.dim, 12, 600, 'left', 'IBM Plex Sans Condensed');
+  const s = 100, colW = 150, x0 = 285;
+  const rows = [
+    { name: 'INSPECTOR', role: 'DAMAGE', col: C.dmg, y: 140, items: [['MK I', 'PROBE', (x, y) => inspector(g, x, y, s, 1)], ['MK II', 'SENTINEL', (x, y) => inspector(g, x, y, s, 2)], ['MK III', 'ARRAY', (x, y) => inspector(g, x, y, s, 3)]], note: 'pedestal sensor  >  armored body, heat sinks, hooded head  >  plinth, two-stage column, three pods on arms, crown halo' },
+    { name: 'RATE LIMITER', role: 'SUPPORT', col: C.sup, y: 350, items: [['MK I', 'GATE', (x, y) => limiter(g, x, y, s, 1)], ['MK II', 'CLAMP', (x, y) => limiter(g, x, y, s, 2)], ['MK III', 'CHOKEPOINT', (x, y) => limiter(g, x, y, s, 3)]], note: 'iris drum  >  vented drum gripped by clamp arms  >  stacked drums, double iris, pylon cage with an energy ring' },
+    { name: 'SANDBOX', role: 'AREA', col: C.area, y: 560, items: [['MK I', 'CELL', (x, y) => sandbox(g, x, y, s, 'mk1')], ['MK II', 'VAULT', (x, y) => sandbox(g, x, y, s, 'mk2')], ['CLUSTER I', 'SATELLITES', (x, y) => sandbox(g, x, y, s, 'cluster1')], ['CLUSTER II', 'ARRAY', (x, y) => sandbox(g, x, y, s, 'cluster2')], ['REMOTE I', 'RELAY', (x, y) => sandbox(g, x, y, s, 'remote1')], ['REMOTE II', 'UPLINK', (x, y) => sandbox(g, x, y, s, 'remote2')]], note: 'cell  >  reinforced vault  >  then either piped satellite cells, or a relay mast that becomes a lattice uplink' },
+  ];
+  for (const r of rows) {
+    text(r.name, 24, r.y - 30, C.ink, 15, 600, 'left', 'IBM Plex Sans Condensed');
+    text(r.role, 24, r.y - 12, r.col, 10, 600);
+    g.fillStyle = r.col; g.fillRect(24, r.y - 4, 26, 2);
+    let ly = r.y + 16;
+    r.note.split('  >  ').forEach((part, i) => { const words = ((i ? '> ' : '') + part).split(' '); let line = ''; g.font = '500 8.5px IBM Plex Mono'; for (const w of words) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > 190) { text(line, 24, ly, C.mute, 8.5); ly += 12; line = '  ' + w; } else line = t; } text(line, 24, ly, C.mute, 8.5); ly += 14; });
+    r.items.forEach(([tier, nick, fn], i) => {
+      const x = x0 + i * colW, y = r.y + 30;
+      tile(x, y, s);
+      fn(x, y);
+      text(tier, x, y + s * 0.62, C.ink, 9.5, 600, 'center');
+      text(nick, x, y + s * 0.62 + 12, C.mute, 8, 500, 'center');
+    });
+    if (r.items.length > 3) for (const [i, lbl] of [[2, 'THEN'], [4, 'OR']]) { const x = x0 + i * colW - colW / 2; g.strokeStyle = '#2a313a'; g.beginPath(); g.moveTo(x, r.y - 50); g.lineTo(x, r.y + 110); g.stroke(); g.fillStyle = C.bg; g.fillRect(x - 16, r.y + 24, 32, 14); text(lbl, x, r.y + 34, C.dim, 8, 600, 'center'); }
+  }
+  // actual size: what these look like on a phone board (~32 px per cell)
+  const ax = 790, ay = 120, cs = 32;
+  text('ACTUAL SIZE ON A PHONE', ax, ay - 34, C.ink, 11, 600, 'left', 'IBM Plex Sans Condensed');
+  text('one board cell = 32 px', ax, ay - 20, C.mute, 8.5);
+  const minis = [(x, y) => inspector(g, x, y, cs, 1), (x, y) => inspector(g, x, y, cs, 2), (x, y) => inspector(g, x, y, cs, 3), (x, y) => limiter(g, x, y, cs, 1), (x, y) => limiter(g, x, y, cs, 2), (x, y) => limiter(g, x, y, cs, 3), (x, y) => sandbox(g, x, y, cs, 'mk1'), (x, y) => sandbox(g, x, y, cs, 'mk2'), (x, y) => sandbox(g, x, y, cs, 'cluster2'), (x, y) => sandbox(g, x, y, cs, 'remote2')];
+  g.fillStyle = '#0e1115'; g.fillRect(ax - 6, ay - 6, cs * 10 + 12, cs * 2.4 + 12);
+  g.fillStyle = 'rgba(210,225,240,0.13)'; for (let i = 0; i <= 10; i++) for (let j = 0; j <= 2; j++) g.fillRect(ax + i * cs - 0.75, ay + j * cs * 1.2 - 0.75, 1.5, 1.5);
+  minis.forEach((fn, i) => fn(ax + (i + 0.5) * cs, ay + cs * 1.45));
+  ['I1', 'I2', 'I3', 'R1', 'R2', 'R3', 'S1', 'S2', 'C2', 'U2'].forEach((t, i) => text(t, ax + (i + 0.5) * cs, ay + cs * 2.4 + 16, C.mute, 7.5, 500, 'center'));
+  // a small board slice at real size with a mixed maze
+  const bx = 790, by = 290, n = 10, m = 5;
+  text('IN CONTEXT', bx, by - 14, C.ink, 11, 600, 'left', 'IBM Plex Sans Condensed');
+  g.fillStyle = '#0e1115'; g.fillRect(bx, by, n * cs, m * cs);
+  g.fillStyle = 'rgba(210,225,240,0.13)'; for (let i = 1; i < n; i++) for (let j = 1; j < m; j++) g.fillRect(bx + i * cs - 0.75, by + j * cs - 0.75, 1.5, 1.5);
+  // traffic channel
+  g.strokeStyle = '#06080a'; g.lineWidth = cs * 0.5; g.beginPath(); g.moveTo(bx, by + cs * 2.5); g.lineTo(bx + cs * 4.5, by + cs * 2.5); g.lineTo(bx + cs * 4.5, by + cs * 4.5); g.lineTo(bx + n * cs, by + cs * 4.5); g.stroke();
+  g.save(); g.globalCompositeOperation = 'lighter'; g.strokeStyle = rgba(C.hot, 0.35); g.lineWidth = 1; g.stroke(); g.restore();
+  const put = [[1, 1, (x, y) => inspector(g, x, y, cs, 1)], [2, 1, (x, y) => inspector(g, x, y, cs, 2)], [3, 1, (x, y) => inspector(g, x, y, cs, 3)], [5, 2, (x, y) => limiter(g, x, y, cs, 3)], [5, 3, (x, y) => sandbox(g, x, y, cs, 'mk2')], [3, 3, (x, y) => limiter(g, x, y, cs, 1)], [3, 4, (x, y) => sandbox(g, x, y, cs, 'cluster2')], [7, 3, (x, y) => inspector(g, x, y, cs, 3)], [8, 3, (x, y) => sandbox(g, x, y, cs, 'remote2')], [6, 4, (x, y) => inspector(g, x, y, cs, 2)], [2, 3, (x, y) => inspector(g, x, y, cs, 1)]];
+  put.sort((a, b) => a[1] - b[1]).forEach(([cx, cy, fn]) => fn(bx + (cx + 0.5) * cs, by + (cy + 0.5) * cs));
+}
+Promise.all(['500', '600'].map((w) => document.fonts.load(`${w} 10px "IBM Plex Mono"`)).concat(document.fonts.load('600 10px "IBM Plex Sans Condensed"'))).finally(() => { draw(); document.body.dataset.ready = '1'; });
+</script>
+<div class="atmo"></div>
+</body>
+</html>
