@@ -12,6 +12,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildTower, type FireEvent, type Stage } from '../../src/render3d/towers';
+import { buildTower as buildR6 } from '../../src/render3d/legacy/r6';
 import { buildTower as buildR5 } from '../../src/render3d/legacy/r5';
 import { buildTower as buildR4 } from '../../src/render3d/legacy/r4';
 import { GEN, ROLE, box, contactShadow, findClipping, glow, lightPool } from '../../src/render3d/kit';
@@ -24,18 +25,19 @@ const LINEAGES: Record<Lineage, { label: string; color: string; redone: boolean;
   sandbox: { label: 'SANDBOX', color: '#35e0b2', redone: false, stages: [['mk1', 'MK I', 'CELL'], ['mk2', 'MK II', 'VAULT'], ['cluster1', 'CLUSTER I', '4 PODS'], ['cluster2', 'CLUSTER II', '6 PODS'], ['remote1', 'REMOTE I', 'RELAY'], ['remote2', 'REMOTE II', 'UPLINK']] },
 };
 /* Older rounds stay viewable for comparison, behind the ⋯ menu. */
-type Version = 'current' | 'r5' | 'r4';
+type Version = 'current' | 'r6' | 'r5' | 'r4';
 const VERSIONS: Record<Lineage, { id: Version | '2d'; label: string }[]> = {
-  inspector: [{ id: 'current', label: 'Current (round 7, A or B)' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
+  inspector: [{ id: 'current', label: 'Current (round 8 · A or B)' }, { id: 'r6', label: 'Round 6 · eye in a socket' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
   limiter: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
   sandbox: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
 };
 let version: Version = 'current';
-let variant: 'cute' | 'robot' = (params0().get('variant') as 'cute' | 'robot') || 'cute';
+let variant: 'camera' | 'robot' = (params0().get('variant') as 'camera' | 'robot') || 'camera';
 function params0(): URLSearchParams { return new URLSearchParams(location.search); }
 /** What the lab needs from any tower, whichever round it comes from. */
 interface LabTower { root: THREE.Group; range: number; locks: THREE.Vector3[]; onFire: ((e: FireEvent) => void) | null; update(dt: number, t: number, targets: THREE.Vector3[]): void }
 function makeTower(kind: Lineage, stage: Stage): LabTower {
+  if (version === 'r6') return buildR6(kind, stage) as unknown as LabTower;
   if (version === 'r5') return buildR5(kind, stage) as unknown as LabTower;
   if (version === 'r4') {
     const old = buildR4(kind, stage);
@@ -427,7 +429,7 @@ function updateNote(): void {
   if (solo !== null && slots[solo]) parts.push(`SOLO · ${slots[solo].name} · TAP EMPTY BOARD TO EXIT`);
   document.getElementById('note')!.textContent = parts.join('   ');
 }
-document.querySelectorAll<HTMLButtonElement>('[data-variant]').forEach((b) => b.addEventListener('click', () => { variant = b.dataset.variant as 'cute' | 'robot'; buildWorld(); }));
+document.querySelectorAll<HTMLButtonElement>('[data-variant]').forEach((b) => b.addEventListener('click', () => { variant = b.dataset.variant as 'camera' | 'robot'; buildWorld(); }));
 
 /* ------------------------------------------------------------ compare menu */
 const menu = $('vermenu');
@@ -535,7 +537,7 @@ requestAnimationFrame(frame);
   get slots() { return slots; },
   focusOn: (i: number, z = 2.6) => { setSolo(i); zoomGoal = z; },
   unsolo: () => setSolo(null),
-  setVariant: (v: 'cute' | 'robot') => { variant = v; buildWorld(); },
+  setVariant: (v: 'camera' | 'robot') => { variant = v; buildWorld(); },
   setView: (a: number, el: number) => { azim = a; elev = el; },
   setLineage: (l: Lineage) => { lineage = l; buildWorld(); },
 };
