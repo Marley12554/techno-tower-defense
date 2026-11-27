@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Style frames</title>
+<!--
+  Static style frames for the UI overhaul. Not game code.
+  ?theme=a|b|c  &view=board|sheet
+  a = Tactical (gunmetal + olive), b = Phosphor (CRT radar), c = Ops (graphite + ice)
+-->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  :root { --mono: 'IBM Plex Mono', ui-monospace, monospace; --cond: 'IBM Plex Sans Condensed', 'IBM Plex Mono', sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--mono); }
+  body.a { --bg:#0a0c0d; --panel:#111417; --panel2:#161a1e; --line:#262c31; --line2:#343c43; --ink:#c8cfd3; --dim:#6d777e; --ui:#a9b77f; --fr:#79cfe0; --hot:#e5484d; --warn:#e0913a; }
+  body.b { --bg:#050806; --panel:#08100a; --panel2:#0b160e; --line:#163020; --line2:#1f4a2c; --ink:#9be3a6; --dim:#4c8a58; --ui:#7fe08c; --fr:#7fe08c; --hot:#ff4f4f; --warn:#ffb347; }
+  body.c { --bg:#0b0d10; --panel:#111419; --panel2:#151920; --line:#232a33; --line2:#2f3843; --ink:#dce4ec; --dim:#76818d; --ui:#e4ebf2; --fr:#8cc8ff; --hot:#ff4d4f; --warn:#ffa940; }
+
+  #stage { position: absolute; inset: 0; }
+  canvas { position: absolute; inset: 0; }
+
+  /* top strip over the board */
+  .top { position: absolute; left: 8px; top: 6px; right: 218px; height: 30px; display: flex; align-items: center; gap: 6px; }
+  .sq { width: 30px; height: 30px; display: grid; place-items: center; background: var(--panel); border: 1px solid var(--line2); color: var(--ink); }
+  .sq svg { width: 14px; height: 14px; }
+  .sq.on { border-color: var(--ui); color: var(--ui); }
+  .sector { margin-left: 8px; display: flex; flex-direction: column; line-height: 1.15; }
+  .sector b { font-family: var(--cond); font-weight: 600; font-size: 12px; letter-spacing: 1.5px; color: var(--ink); }
+  .sector span { font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+  .spacer { flex: 1; }
+  .next { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+  .next .tag { color: var(--ink); padding: 2px 6px; border: 1px solid var(--line2); background: var(--panel); }
+  .next .tag i { font-style: normal; color: var(--hot); }
+  .wave { font-family: var(--cond); font-size: 12px; letter-spacing: 1.5px; color: var(--ink); padding: 0 8px; height: 30px; display: flex; align-items: center; border: 1px solid var(--line2); background: var(--panel); }
+  .wave em { font-style: normal; color: var(--dim); margin-left: 4px; }
+
+  /* console */
+  .console { position: absolute; top: 0; right: 0; bottom: 0; width: 210px; background: var(--panel); border-left: 1px solid var(--line2); display: flex; flex-direction: column; }
+  .c-head { padding: 8px 10px 8px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: end; }
+  .lbl { font-size: 8.5px; letter-spacing: 1.6px; color: var(--dim); text-transform: uppercase; }
+  .integ { grid-column: 1 / -1; height: 5px; margin-top: 3px; background: color-mix(in srgb, var(--hot) 28%, transparent); position: relative; }
+  .integ i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--fr); }
+  .big { font-family: var(--cond); font-weight: 600; font-size: 20px; color: var(--ink); line-height: 1; }
+  .big small { font-size: 11px; color: var(--dim); font-weight: 500; }
+  .bits { text-align: right; }
+  .bits .big { color: var(--ink); }
+  .bits .gain { font-size: 10px; color: var(--fr); }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; border-bottom: 1px solid var(--line); }
+  .tabs div { text-align: center; padding: 6px 0 5px; font-size: 9px; letter-spacing: 1.8px; color: var(--dim); border-bottom: 2px solid transparent; }
+  .tabs div.on { color: var(--ink); border-bottom-color: var(--ui); }
+  .asset { padding: 7px 10px; display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
+  .a-top { display: flex; gap: 8px; align-items: center; }
+  .a-top canvas { position: static; width: 34px; height: 34px; border: 1px solid var(--line2); background: var(--panel2); }
+  .a-name { font-family: var(--cond); font-weight: 600; font-size: 14px; letter-spacing: 1px; }
+  .a-tier { font-size: 9px; color: var(--dim); letter-spacing: 1.2px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; font-size: 10px; }
+  .stats div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 1px 0; }
+  .stats span { color: var(--dim); }
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
+  .seg div { text-align: center; font-size: 8.5px; letter-spacing: 1px; padding: 4px 0; color: var(--dim); border: 1px solid var(--line); }
+  .seg div.on { color: var(--ink); border-color: var(--ui); }
+  .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .br { border: 1px solid var(--line2); padding: 5px 6px; background: var(--panel2); display: flex; flex-direction: column; gap: 2px; }
+  .br.on { border-color: var(--ui); }
+  .br b { font-family: var(--cond); font-size: 11px; letter-spacing: 0.6px; }
+  .br span { font-size: 8.5px; color: var(--dim); line-height: 1.25; }
+  .br em { font-style: normal; font-size: 10px; color: var(--ink); margin-top: 2px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: auto; }
+  .btn { text-align: center; font-size: 9px; letter-spacing: 1.4px; padding: 7px 0; border: 1px solid var(--line2); color: var(--ink); }
+  .btn.prim { background: var(--ui); color: var(--bg); border-color: var(--ui); font-weight: 600; }
+  .c-foot { padding: 6px 10px; border-top: 1px solid var(--line); font-size: 8.5px; color: var(--ink); white-space: nowrap; overflow: hidden; }
+  .c-foot .t { color: var(--dim); }
+  .c-foot u { text-decoration: none; color: var(--fr); }
+
+  /* event log ticker */
+  .log { position: absolute; left: 16px; bottom: 10px; font-size: 9px; line-height: 1.5; letter-spacing: 0.3px; color: var(--dim); pointer-events: none; }
+  .log div:nth-child(1) { color: var(--ink); }
+  .log b { font-weight: 500; color: var(--hot); }
+  .log u { text-decoration: none; color: var(--fr); }
+
+  /* sheet view */
+  .sheet-title { position: absolute; left: 16px; top: 10px; font-family: var(--cond); font-size: 12px; letter-spacing: 2px; color: var(--dim); }
+
+  /* texture */
+  .scan { position: absolute; inset: 0; pointer-events: none; }
+  body.a .scan { background: repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 3px); }
+  body.b .scan { background: repeating-linear-gradient(0deg, rgba(0,0,0,0.28) 0 1px, transparent 1px 3px), radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55)); }
+  body.c .scan { background: none; }
+  body.b .console, body.b .sq, body.b .wave, body.b .next .tag { text-shadow: 0 0 6px rgba(127,224,140,0.45); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const P = new URLSearchParams(location.search);
+const THEME = P.get('theme') || 'a';
+const VIEW = P.get('view') || 'board';
+document.body.className = THEME;
+const css = (n) => getComputedStyle(document.body).getPropertyValue(n).trim();
+const T = { bg: css('--bg'), panel: css('--panel'), line: css('--line'), line2: css('--line2'), ink: css('--ink'), dim: css('--dim'), ui: css('--ui'), fr: css('--fr'), hot: css('--hot'), warn: css('--warn') };
+const PHOS = THEME === 'b';
+const LW = THEME === 'c' ? 1.1 : 1.4;
+const W = innerWidth, H = innerHeight, DPR = 2;
+
+function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+function mix(h1, h2, t) { const a = parseInt(h1.slice(1), 16), b = parseInt(h2.slice(1), 16); const c = (s) => Math.round(((a >> s) & 255) * (1 - t) + ((b >> s) & 255) * t); return `rgb(${c(16)},${c(8)},${c(0)})`; }
+function canvas(w, h) { const c = document.createElement('canvas'); c.width = w * DPR; c.height = h * DPR; c.style.width = w + 'px'; c.style.height = h + 'px'; const g = c.getContext('2d'); g.scale(DPR, DPR); return [c, g]; }
+function glow(g, col, b) { if (PHOS) { g.shadowColor = col; g.shadowBlur = b; } }
+function noGlow(g) { g.shadowBlur = 0; }
+function poly(g, pts) { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); g.closePath(); }
+function ngon(g, x, y, n, r, rot = 0) { const p = []; for (let i = 0; i < n; i++) { const a = rot + i / n * Math.PI * 2; p.push([x + Math.cos(a) * r, y + Math.sin(a) * r]); } poly(g, p); }
+
+/* ------------------------------------------------------------------ towers */
+// Top-down silhouettes that read as what the program does. No turrets, no barrels.
+function inspector(g, x, y, s, tier, col = T.fr) {
+  g.save(); g.lineWidth = LW; g.strokeStyle = col; glow(g, col, 6);
+  if (tier >= 3) { // outer sensor ring with three pods
+    g.globalAlpha = 0.55; g.beginPath(); g.arc(x, y, s * 0.44, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1;
+    for (let k = 0; k < 3; k++) { const a = -Math.PI / 2 + k * Math.PI * 2 / 3; g.fillStyle = col; g.beginPath(); g.arc(x + Math.cos(a) * s * 0.44, y + Math.sin(a) * s * 0.44, s * 0.05, 0, 7); g.fill(); }
+  }
+  ngon(g, x, y, 6, s * 0.3, Math.PI / 6); g.fillStyle = T.panel; g.fill(); g.stroke();
+  if (tier >= 2) { // side antenna fins
+    for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(x + sx * s * 0.3, y - s * 0.1); g.lineTo(x + sx * s * 0.4, y - s * 0.18); g.moveTo(x + sx * s * 0.3, y + s * 0.1); g.lineTo(x + sx * s * 0.4, y + s * 0.18); g.stroke(); }
+  }
+  g.beginPath(); g.arc(x, y, s * 0.13, 0, 7); g.fillStyle = rgba(col.startsWith('#') ? col : '#8cc8ff', 0.18); g.fill(); g.stroke();
+  g.fillStyle = col; g.beginPath(); g.arc(x, y, s * 0.045, 0, 7); g.fill();
+  g.restore();
+}
+function limiter(g, x, y, s, tier, col = T.fr) {
+  g.save(); g.lineWidth = LW; g.strokeStyle = col; glow(g, col, 6);
+  if (tier >= 3) for (let k = 0; k < 4; k++) { const a = Math.PI / 4 + k * Math.PI / 2; g.beginPath(); g.moveTo(x + Math.cos(a) * s * 0.42, y + Math.sin(a) * s * 0.42); g.lineTo(x + Math.cos(a) * s * 0.5, y + Math.sin(a) * s * 0.5); g.stroke(); }
+  if (tier >= 2) { g.globalAlpha = 0.6; g.beginPath(); g.arc(x, y, s * 0.38, 0, 7); g.stroke(); g.globalAlpha = 1; }
+  g.beginPath(); g.arc(x, y, s * 0.3, 0, 7); g.fillStyle = T.panel; g.fill(); g.stroke();
+  // iris blades
+  g.lineWidth = 1.1;
+  for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; g.beginPath(); g.moveTo(x + Math.cos(a) * s * 0.29, y + Math.sin(a) * s * 0.29); g.lineTo(x + Math.cos(a + 1.2) * s * 0.1, y + Math.sin(a + 1.2) * s * 0.1); g.stroke(); }
+  g.restore();
+}
+function sandbox(g, x, y, s, tier, branch, col = T.fr) {
+  g.save(); g.lineWidth = LW; g.strokeStyle = col; glow(g, col, 6);
+  const h = s * 0.3;
+  if (branch === 'remote') { g.beginPath(); g.moveTo(x + h, y - h); g.lineTo(x + s * 0.48, y - s * 0.48); g.stroke(); g.beginPath(); g.arc(x + s * 0.48, y - s * 0.48, s * 0.1, Math.PI * 0.25, Math.PI * 1.25); g.stroke(); }
+  g.fillStyle = T.panel; g.fillRect(x - h, y - h, h * 2, h * 2); g.strokeRect(x - h, y - h, h * 2, h * 2);
+  if (tier >= 2) { g.globalAlpha = 0.55; g.strokeRect(x - h * 1.28, y - h * 1.28, h * 2.56, h * 2.56); g.globalAlpha = 1; }
+  // containment core: a cube seen from above
+  g.beginPath(); g.moveTo(x, y - h * 0.55); g.lineTo(x + h * 0.55, y); g.lineTo(x, y + h * 0.55); g.lineTo(x - h * 0.55, y); g.closePath(); g.stroke();
+  g.beginPath(); g.moveTo(x - h, y - h); g.lineTo(x - h * 0.55, y); g.moveTo(x + h, y + h); g.lineTo(x + h * 0.55, y); g.globalAlpha = 0.5; g.stroke(); g.globalAlpha = 1;
+  if (branch === 'cluster') for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.fillStyle = T.panel; g.fillRect(x + sx * s * 0.4 - s * 0.07, y + sy * s * 0.4 - s * 0.07, s * 0.14, s * 0.14); g.strokeRect(x + sx * s * 0.4 - s * 0.07, y + sy * s * 0.4 - s * 0.07, s * 0.14, s * 0.14); }
+  g.restore();
+}
+function upMark(g, x, y, s) { g.save(); g.fillStyle = T.ui; glow(g, T.ui, 4); poly(g, [[x + s * 0.32, y - s * 0.46], [x + s * 0.42, y - s * 0.32], [x + s * 0.22, y - s * 0.32]]); g.fill(); g.restore(); }
+
+/* ----------------------------------------------------------------- malware */
+// Health is layers. Each hit strips a shell: the packet shrinks and runs hotter.
+function heat(layers, max) { return mix(T.hot, '#ffe2b0', 1 - (layers - 1) / Math.max(1, max - 1)); }
+function worm(g, x, y, s, layers, max = 3, a = 0) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  const col = heat(layers, max);
+  glow(g, T.hot, 8);
+  for (let k = layers; k >= 1; k--) {
+    const r = s * (0.07 + k * 0.05);
+    g.globalAlpha = k === 1 ? 1 : 0.35 + 0.5 / k;
+    poly(g, [[r * 1.3, 0], [0, r * 0.8], [-r * 1.1, 0], [0, -r * 0.8]]);
+    g.lineWidth = 1.2; g.strokeStyle = col; g.stroke();
+  }
+  g.globalAlpha = 1; poly(g, [[s * 0.08, 0], [0, s * 0.05], [-s * 0.07, 0], [0, -s * 0.05]]); g.fillStyle = col; g.fill();
+  g.restore();
+}
+function spyware(g, x, y, s, layers, max = 2, a = 0) {
+  g.save(); g.translate(x, y); g.rotate(a);
+  const col = mix(T.warn, '#ffe9c4', 1 - (layers - 1) / Math.max(1, max - 1));
+  glow(g, T.warn, 8);
+  // exfil streak
+  const grd = g.createLinearGradient(-s * 0.7, 0, 0, 0); grd.addColorStop(0, rgba(T.warn, 0)); grd.addColorStop(1, rgba(T.warn, 0.55));
+  g.strokeStyle = grd; g.lineWidth = s * 0.06; g.beginPath(); g.moveTo(-s * 0.7, 0); g.lineTo(-s * 0.12, 0); g.stroke();
+  for (let k = layers; k >= 1; k--) {
+    const r = s * (0.1 + k * 0.05);
+    g.globalAlpha = k === 1 ? 1 : 0.5;
+    g.beginPath(); g.moveTo(-r, 0); g.quadraticCurveTo(0, -r * 0.8, r, 0); g.quadraticCurveTo(0, r * 0.8, -r, 0); g.lineWidth = 1.2; g.strokeStyle = col; g.stroke();
+  }
+  g.globalAlpha = 1; g.beginPath(); g.arc(s * 0.02, 0, s * 0.05, 0, 7); g.fillStyle = col; g.fill();
+  g.restore();
+}
+function trojan(g, x, y, s, revealed, layers = 4) {
+  g.save();
+  const r = s * 0.22;
+  if (!revealed) {
+    // Disguised: wears the network's own color. Only a thin seam gives it away.
+    g.strokeStyle = T.fr; g.lineWidth = 1.4; glow(g, T.fr, 6);
+    g.fillStyle = T.panel; g.fillRect(x - r, y - r, r * 2, r * 2); g.strokeRect(x - r, y - r, r * 2, r * 2);
+    g.strokeStyle = rgba(T.fr, 0.4); g.strokeRect(x - r * 0.6, y - r * 0.6, r * 1.2, r * 1.2);
+    g.strokeStyle = rgba(T.hot, 0.7); g.lineWidth = 1; g.beginPath(); g.moveTo(x - r, y + r * 0.15); g.lineTo(x + r, y - r * 0.15); g.stroke();
+  } else {
+    glow(g, T.hot, 10);
+    for (let k = layers; k >= 1; k--) { const rr = s * (0.08 + k * 0.045); g.globalAlpha = k === 1 ? 1 : 0.35 + 0.4 / k; g.strokeStyle = heat(k, 4); g.lineWidth = 1.2; g.strokeRect(x - rr, y - rr, rr * 2, rr * 2); }
+    g.globalAlpha = 1; g.fillStyle = T.hot; g.fillRect(x - s * 0.06, y - s * 0.06, s * 0.12, s * 0.12);
+    // fractures where the payload is breaking out
+    g.strokeStyle = heat(1, 4); g.lineWidth = 1;
+    for (const [dx, dy] of [[1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(x + dx * s * 0.1, y + dy * s * 0.1); g.lineTo(x + dx * s * 0.2, y + dy * s * 0.14); g.stroke(); }
+  }
+  g.restore();
+}
+function shatter(g, x, y, s, col = T.hot) {
+  g.save(); glow(g, col, 10);
+  g.strokeStyle = rgba('#ffffff', 0.8); g.lineWidth = 1; g.beginPath(); g.arc(x, y, s * 0.22, 0, 7); g.stroke();
+  const frags = [[0.3, -0.5, 0.2], [0.55, 0.1, 0.9], [-0.2, 0.5, 2.1], [-0.55, -0.15, 3.2], [0.1, 0.6, 4.4], [-0.35, -0.5, 5.2]];
+  g.fillStyle = mix(T.hot, '#ffe2b0', 0.6);
+  for (const [fx, fy, rot] of frags) { g.save(); g.translate(x + fx * s * 0.55, y + fy * s * 0.55); g.rotate(rot); poly(g, [[0, -s * 0.05], [s * 0.04, s * 0.03], [-s * 0.035, s * 0.03]]); g.fill(); g.restore(); }
+  g.restore();
+}
+
+/* ------------------------------------------------------------------- board */
+const COLS = 18, ROWS = 10;
+const grid = [
+  '.......I..........',
+  'S......I..........',
+  '....vv.I..........',
+  '....vv.L.S.....L..',
+  '.......I.Idddd..CC',
+  '.......I.Idddd..CC',
+  '....ww.X.I..e.....',
+  '....ww...I........',
+  'S........I........',
+  '.........I........',
+];
+// Tower overrides: tier and kind per cell (I inspector, L limiter, S sandbox, X sandbox mk1)
+const tiers = { '7,1': 2, '9,5': 3, '9,7': 2, '7,3': 2, '15,3': 1 };
+
+function board(L) {
+  const [c, g] = canvas(W, H);
+  const { ox, oy, s } = L;
+  const X = (cx) => ox + cx * s, Y = (cy) => oy + cy * s;
+  const blocked = (cx, cy) => { const ch = grid[cy][cx]; return 'IvwdeLXS'.includes(ch) && !(ch === 'S' && cx === 0); };
+  // Field
+  g.fillStyle = T.bg; g.fillRect(0, 0, W, H);
+  g.fillStyle = PHOS ? '#06100a' : rgba(T.panel, 0.55); g.fillRect(ox, oy, COLS * s, ROWS * s);
+  // Placement grid: corner ticks instead of full lines
+  if (THEME === 'c') {
+    g.fillStyle = rgba(T.ink, 0.16);
+    for (let y = 0; y <= ROWS; y++) for (let x = 0; x <= COLS; x++) g.fillRect(X(x) - 0.75, Y(y) - 0.75, 1.5, 1.5);
+  } else {
+    g.strokeStyle = rgba(T.ink, PHOS ? 0.14 : 0.1); g.lineWidth = 1;
+    for (let y = 0; y <= ROWS; y++) for (let x = 0; x <= COLS; x++) { const px = X(x) + 0.5, py = Y(y) + 0.5; g.beginPath(); g.moveTo(px - 2.5, py); g.lineTo(px + 2.5, py); g.moveTo(px, py - 2.5); g.lineTo(px, py + 2.5); g.stroke(); }
+  }
+  // Coordinates
+  g.fillStyle = rgba(T.dim, 0.8); g.font = `500 7px ${'IBM Plex Mono'}`; g.textAlign = 'center';
+  for (let x = 0; x < COLS; x++) g.fillText(String.fromCharCode(65 + x), X(x + 0.5), oy - 3);
+  g.textAlign = 'right'; for (let y = 0; y < ROWS; y++) g.fillText(String(y + 1).padStart(2, '0'), ox - 3, Y(y + 0.5) + 2.5);
+  // Frame: hairline with corner brackets
+  g.strokeStyle = T.line2; g.strokeRect(ox + 0.5, oy + 0.5, COLS * s, ROWS * s);
+  g.strokeStyle = T.ui; g.lineWidth = 1.5; const k = 10;
+  for (const [x, y, dx, dy] of [[ox, oy, 1, 1], [ox + COLS * s, oy, -1, 1], [ox, oy + ROWS * s, 1, -1], [ox + COLS * s, oy + ROWS * s, -1, -1]]) { g.beginPath(); g.moveTo(x, y + dy * k); g.lineTo(x, y); g.lineTo(x + dx * k, y); g.stroke(); }
+
+  // Existing network: faint backbone between infrastructure and the Core
+  g.strokeStyle = rgba(T.ink, 0.08); g.lineWidth = 1;
+  for (const [a, b] of [[[5, 3], [11, 4.5]], [[5, 7], [11, 5.5]], [[12.5, 6.5], [12.5, 5.5]], [[13.5, 4.5], [16, 4.5]]]) { g.beginPath(); g.moveTo(X(a[0]), Y(a[1])); g.lineTo(X(b[0]), Y(b[1])); g.stroke(); }
+
+  // Restricted subnets (hatched) and the DMZ server cluster
+  const zone = (x0, y0, w, h, label, sub) => {
+    g.save(); g.beginPath(); g.rect(X(x0) + 3, Y(y0) + 3, w * s - 6, h * s - 6); g.clip();
+    g.strokeStyle = THEME === 'a' ? rgba('#c9a227', 0.12) : rgba(T.ink, 0.07); g.lineWidth = THEME === 'a' ? 2 : 1;
+    for (let d = -h * s; d < w * s + h * s; d += 6) { g.beginPath(); g.moveTo(X(x0) + d, Y(y0)); g.lineTo(X(x0) + d - h * s, Y(y0) + h * s); g.stroke(); }
+    g.restore();
+    g.strokeStyle = rgba(T.ink, 0.22); g.strokeRect(X(x0) + 3.5, Y(y0) + 3.5, w * s - 7, h * s - 7);
+    g.fillStyle = T.dim; g.font = `600 8px ${'IBM Plex Mono'}`; g.textAlign = 'left'; g.fillText(label, X(x0) + 7, Y(y0) + 13);
+    g.font = `500 6.5px ${'IBM Plex Mono'}`; g.fillText(sub, X(x0) + 7, Y(y0) + 22);
+  };
+  zone(4, 2, 2, 2, 'VLAN-20', 'ISOLATED');
+  zone(4, 6, 2, 2, 'VLAN-30', 'ISOLATED');
+  // DMZ: racks
+  g.strokeStyle = rgba(T.ink, 0.22); g.strokeRect(X(10) + 3.5, Y(4) + 3.5, 4 * s - 7, 2 * s - 7);
+  g.fillStyle = T.dim; g.font = `600 8px ${'IBM Plex Mono'}`; g.textAlign = 'left'; g.fillText('DMZ', X(10) + 7, Y(4) + 13);
+  for (let r = 0; r < 3; r++) { const rx = X(10.6 + r * 1.15), ry = Y(4.55); g.strokeStyle = rgba(T.ink, 0.25); g.strokeRect(rx, ry, s * 0.75, s * 1.15); for (let u = 0; u < 5; u++) { g.fillStyle = rgba(T.ink, 0.12); g.fillRect(rx + 3, ry + 4 + u * s * 0.2, s * 0.75 - 9, 2); g.fillStyle = rgba(T.fr, u === 1 ? 0.6 : 0.25); g.fillRect(rx + s * 0.75 - 5, ry + 4 + u * s * 0.2, 2, 2); } }
+  // Endpoint
+  const ep = (cx, cy, label) => { const x = X(cx + 0.5), y = Y(cy + 0.5); g.strokeStyle = rgba(T.ink, 0.3); g.beginPath(); g.arc(x, y, s * 0.2, 0, 7); g.stroke(); g.fillStyle = rgba(T.ink, 0.3); g.fillRect(x - 2, y - 2, 4, 4); g.fillStyle = T.dim; g.font = `500 6.5px ${'IBM Plex Mono'}`; g.textAlign = 'center'; g.fillText(label, x, y + s * 0.42); };
+  ep(12, 6, 'EP-12');
+
+  // Route (computed from the grid) as a traffic corridor
+  const route0 = bfsRoute(0, 1, blocked), route1 = bfsRoute(0, 8, blocked);
+  const pts0 = chamfer(route0.map(([x, y]) => [X(x + 0.5), Y(y + 0.5)]), s, X(0)), pts1 = chamfer(route1.map(([x, y]) => [X(x + 0.5), Y(y + 0.5)]), s, X(0));
+  for (const pts of [pts0, pts1]) corridor(g, pts, s);
+  // Rate limiter clamp: corridor narrows where the field touches it
+  clampAt(g, pts0, X(7.5), Y(3.5), s * 2.0, s);
+  clampAt(g, pts1, X(15.5), Y(3.5), s * 1.7, s);
+
+  // Ingress nodes (external, hostile)
+  for (const [cx, cy, label] of [[0, 1, 'WAN-1'], [0, 8, 'WAN-2']]) {
+    const x = X(cx + 0.5), y = Y(cy + 0.5);
+    g.save(); glow(g, T.hot, 8); g.strokeStyle = T.hot; g.lineWidth = 1.4;
+    g.beginPath(); g.arc(x, y, s * 0.3, -Math.PI / 2, Math.PI / 2, true); g.stroke();
+    g.beginPath(); g.arc(x, y, s * 0.18, 0, 7); g.fillStyle = rgba(T.hot, 0.15); g.fill(); g.stroke();
+    g.restore();
+    g.fillStyle = T.hot; g.font = `600 7px ${'IBM Plex Mono'}`; g.textAlign = 'left'; g.fillText(label, x - s * 0.3, y - s * 0.42);
+  }
+  // Core
+  {
+    const x = X(17), y = Y(5);
+    g.save(); g.strokeStyle = T.fr; g.lineWidth = 1.4; glow(g, T.fr, 10);
+    ngon(g, x, y, 8, s * 0.62, Math.PI / 8); g.fillStyle = T.panel; g.fill(); g.stroke();
+    ngon(g, x, y, 8, s * 0.36, Math.PI / 8); g.globalAlpha = 0.6; g.stroke(); g.globalAlpha = 1;
+    g.fillStyle = T.fr; g.fillRect(x - 3, y - 3, 6, 6);
+    // integrity ring
+    const f = 17 / 20, a0 = -Math.PI / 2;
+    g.lineWidth = 2.5; g.strokeStyle = rgba(T.hot, 0.35); g.beginPath(); g.arc(x, y, s * 0.82, a0 + f * Math.PI * 2, a0 + Math.PI * 2); g.stroke();
+    g.strokeStyle = T.fr; g.beginPath(); g.arc(x, y, s * 0.82, a0, a0 + f * Math.PI * 2); g.stroke();
+    g.restore();
+    g.fillStyle = T.ink; g.font = `600 7px ${'IBM Plex Mono'}`; g.textAlign = 'center'; g.fillText('CORE · DC-01', x, Y(3.85));
+  }
+
+  // Friendly links between adjacent nodes
+  const towers = [];
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) { const ch = grid[y][x]; if ('ILXS'.includes(ch) && !(ch === 'S' && x === 0)) towers.push([x, y, ch]); }
+  g.strokeStyle = rgba(T.fr, 0.35); g.lineWidth = 1;
+  for (const [x, y] of towers) for (const [x2, y2] of towers) if ((x2 === x + 1 && y2 === y) || (x2 === x && y2 === y + 1)) { g.beginPath(); g.moveTo(X(x + 0.5), Y(y + 0.5)); g.lineTo(X(x2 + 0.5), Y(y2 + 0.5)); g.stroke(); }
+
+  // Rate limiter fields (subtle)
+  for (const [cx, cy, r] of [[7, 3, 2.0], [15, 3, 1.7]]) { g.fillStyle = rgba(T.fr, 0.035); g.beginPath(); g.arc(X(cx + 0.5), Y(cy + 0.5), r * s, 0, 7); g.fill(); }
+  // Selected Sandbox range
+  { const x = X(9.5), y = Y(3.5); g.strokeStyle = rgba(T.ui, 0.28); g.lineWidth = 1; g.beginPath(); g.arc(x, y, s * 4.5, 0, 7); g.stroke(); g.fillStyle = rgba(T.ui, 0.02); g.fill(); g.setLineDash([2, 3]); g.strokeStyle = rgba(T.hot, 0.45); g.beginPath(); g.arc(x, y, s * 1.5, 0, 7); g.stroke(); g.setLineDash([]); }
+
+  // Towers
+  for (const [x, y, ch] of towers) {
+    const px = X(x + 0.5), py = Y(y + 0.5), t = tiers[`${x},${y}`] ?? 1;
+    if (ch === 'I') inspector(g, px, py, s, t);
+    else if (ch === 'L') limiter(g, px, py, s, t);
+    else if (ch === 'S') sandbox(g, px, py, s, 2, null);
+    else sandbox(g, px, py, s, 1, null);
+  }
+  upMark(g, X(7.5), Y(4.5), s); upMark(g, X(9.5), Y(8.5), s);
+  // selection brackets on the Sandbox
+  { const x = X(9.5), y = Y(3.5), o = s * 0.52, k = s * 0.18; g.strokeStyle = T.ui; g.lineWidth = 1.5; for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(x + sx * o, y + sy * (o - k)); g.lineTo(x + sx * o, y + sy * o); g.lineTo(x + sx * (o - k), y + sy * o); g.stroke(); } }
+
+  // Malware on the corridor, in lanes
+  const at = (pts, d, lane) => pointAt(pts, d, lane * s * 0.13);
+  const len0 = pathLen(pts0), len1 = pathLen(pts1);
+  // a worm swarm coming down the col-8 corridor
+  [[0.32, -1, 3], [0.335, 1, 3], [0.35, 0, 2], [0.365, -1, 3], [0.38, 1, 1], [0.395, 0, 3]].forEach(([f, lane, l]) => { const [x, y, a] = at(pts0, len0 * f, lane); worm(g, x, y, s, l, 3, a); });
+  // throttled worms bunch up inside the clamp
+  [[0.22, 0, 3], [0.235, 0, 3]].forEach(([f, lane, l]) => { const [x, y, a] = at(pts0, len0 * f, lane); worm(g, x, y, s, l, 3, a); });
+  // spyware streaking on the lower route
+  { const [x, y, a] = at(pts1, len1 * 0.62, 0); spyware(g, x, y, s, 2, 2, a); }
+  { const [x, y, a] = at(pts1, len1 * 0.2, 0); spyware(g, x, y, s, 1, 2, a); }
+  // disguised trojan just out of the ingress
+  { const [x, y] = at(pts1, len1 * 0.06, 0); trojan(g, x, y, s, false); }
+  { const [x, y] = at(pts0, len0 * 0.08, 0); trojan(g, x, y, s, true, 3); }
+  // inspector Mk III locking a worm: beam + brackets + id
+  {
+    const [tx, ty, a] = at(pts0, len0 * 0.43, 0); worm(g, tx, ty, s, 2, 3, a);
+    const sx = X(9.5), sy = Y(5.5);
+    g.save(); glow(g, T.fr, 6); g.strokeStyle = rgba(T.fr, 0.85); g.lineWidth = 1; g.beginPath(); g.moveTo(sx, sy); g.lineTo(tx, ty); g.stroke();
+    const o = s * 0.2, kk = s * 0.08; g.strokeStyle = T.fr; for (const [qx, qy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(tx + qx * o, ty + qy * (o - kk)); g.lineTo(tx + qx * o, ty + qy * o); g.lineTo(tx + qx * (o - kk), ty + qy * o); g.stroke(); }
+    g.fillStyle = T.fr; g.font = `500 6.5px ${'IBM Plex Mono'}`; g.textAlign = 'left'; g.fillText('WRM 0x3A', tx + o + 2, ty - o + 4);
+    g.restore();
+  }
+  // sandbox isolation field mid-detonation on the lower route
+  {
+    const [x, y] = at(pts1, len1 * 0.3, 0), r = s * 0.62;
+    g.save(); glow(g, T.fr, 8); g.strokeStyle = rgba(T.fr, 0.9); g.lineWidth = 1.2;
+    g.strokeRect(x - r, y - r, r * 2, r * 2);
+    g.strokeStyle = rgba(T.fr, 0.4); g.strokeRect(x - r * 0.7 + 4, y - r * 0.7 - 4, r * 1.4, r * 1.4);
+    for (const [a, b] of [[[-1, -1], [-0.7, -0.7]], [[1, -1], [0.7, -0.7]], [[-1, 1], [-0.7, 0.7]], [[1, 1], [0.7, 0.7]]]) { g.beginPath(); g.moveTo(x + a[0] * r, y + a[1] * r); g.lineTo(x + b[0] * r + 4, y + b[1] * r - 4); g.stroke(); }
+    g.restore();
+    worm(g, x - s * 0.15, y + s * 0.1, s, 1); worm(g, x + s * 0.18, y - s * 0.05, s, 1); shatter(g, x + s * 0.02, y + s * 0.25, s * 0.8);
+  }
+  // a kill: last layer shattering, merged bits token rising
+  { const [x, y] = at(pts0, len0 * 0.78, 0); shatter(g, x, y, s); g.fillStyle = T.fr; g.font = `600 8px ${'IBM Plex Mono'}`; g.textAlign = 'center'; g.fillText('+6', x, y - s * 0.45); }
+  return c;
+}
+
+function bfsRoute(sx, sy, blocked) {
+  const dist = Array.from({ length: ROWS }, () => new Array(COLS).fill(-1)), q = [];
+  for (const [x, y] of [[16, 4], [17, 4], [16, 5], [17, 5]]) { dist[y][x] = 0; q.push([x, y]); }
+  const D = [[1, 0], [0, 1], [0, -1], [-1, 0]];
+  while (q.length) { const [x, y] = q.shift(); for (const [dx, dy] of D) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || dist[ny][nx] >= 0 || blocked(nx, ny)) continue; dist[ny][nx] = dist[y][x] + 1; q.push([nx, ny]); } }
+  const out = [[sx, sy]]; let x = sx, y = sy, pd = 0;
+  while (dist[y][x] > 0) { const order = [pd, 0, 1, 2, 3]; for (const k of order) { const nx = x + D[k][0], ny = y + D[k][1]; if (nx >= 0 && ny >= 0 && nx < COLS && ny < ROWS && dist[ny][nx] === dist[y][x] - 1) { x = nx; y = ny; pd = k; break; } } out.push([x, y]); if (out.length > 200) break; }
+  return out;
+}
+function chamfer(pts, s, x0) {
+  pts = pts.slice(); pts[0] = [pts[0][0] + s * 0.3, pts[0][1]]; // start at the ingress node's edge, never outside the board
+  const cs = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) { const a = pts[i - 1], p = pts[i], c = pts[i + 1]; if (Math.abs((p[0] - a[0]) * (c[1] - p[1]) - (p[1] - a[1]) * (c[0] - p[0])) > 1e-6) cs.push(p); }
+  cs.push(pts[pts.length - 1]);
+  const out = [cs[0]], ch = s * 0.35;
+  for (let i = 1; i < cs.length - 1; i++) { const a = cs[i - 1], p = cs[i], c = cs[i + 1]; const la = Math.hypot(p[0] - a[0], p[1] - a[1]), lc = Math.hypot(c[0] - p[0], c[1] - p[1]); const ca = Math.min(ch, la / 2), cc = Math.min(ch, lc / 2); out.push([p[0] - (p[0] - a[0]) / la * ca, p[1] - (p[1] - a[1]) / la * ca]); out.push([p[0] + (c[0] - p[0]) / lc * cc, p[1] + (c[1] - p[1]) / lc * cc]); }
+  out.push(cs[cs.length - 1]);
+  return out;
+}
+function pathLen(pts) { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; }
+function pointAt(pts, d, off) {
+  for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (d <= l) { const ux = (pts[i][0] - pts[i - 1][0]) / l, uy = (pts[i][1] - pts[i - 1][1]) / l; return [pts[i - 1][0] + ux * d - uy * off, pts[i - 1][1] + uy * d + ux * off, Math.atan2(uy, ux)]; } d -= l; }
+  const p = pts[pts.length - 1]; return [p[0], p[1], 0];
+}
+function corridor(g, pts, s) {
+  // Two hairline rails and a soft channel: a traffic link, not a dashed conveyor.
+  const stroke = (w, col) => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) g.lineTo(p[0], p[1]); g.lineWidth = w; g.strokeStyle = col; g.lineJoin = 'miter'; g.stroke(); };
+  g.save(); glow(g, T.hot, 6);
+  stroke(s * 0.42, rgba(T.hot, PHOS ? 0.07 : 0.06));
+  stroke(s * 0.42, rgba(T.hot, 0)); noGlow(g);
+  // rails
+  for (const off of [-1, 1]) { g.beginPath(); for (let d = 0, L = pathLen(pts); d <= L; d += 2) { const [x, y] = pointAt(pts, d, off * s * 0.21); if (d === 0) g.moveTo(x, y); else g.lineTo(x, y); } g.lineWidth = 1; g.strokeStyle = rgba(T.hot, 0.32); g.stroke(); }
+  g.restore();
+  // direction chevrons, sparse
+  g.save(); g.strokeStyle = rgba(T.hot, 0.45); g.lineWidth = 1;
+  const L = pathLen(pts); for (let d = s * 1.5; d < L - s; d += s * 2.5) { const [x, y, a] = pointAt(pts, d, 0); g.save(); g.translate(x, y); g.rotate(a); g.beginPath(); g.moveTo(-3, -4); g.lineTo(1, 0); g.lineTo(-3, 4); g.stroke(); g.restore(); }
+  g.restore();
+}
+function clampAt(g, pts, cx, cy, r, s) {
+  // Where a Rate Limiter field covers the link, the rails pinch inward.
+  g.save(); g.strokeStyle = rgba(T.fr, 0.7); g.lineWidth = 1.2; glow(g, T.fr, 5);
+  for (const off of [-1, 1]) { g.beginPath(); let on = false; for (let d = 0, L = pathLen(pts); d <= L; d += 2) { const [x0, y0] = pointAt(pts, d, 0); const inside = Math.hypot(x0 - cx, y0 - cy) < r; if (!inside) { on = false; continue; } const [x, y] = pointAt(pts, d, off * s * 0.12); if (!on) { g.moveTo(x, y); on = true; } else g.lineTo(x, y); } g.stroke(); }
+  g.restore();
+}
+
+/* ------------------------------------------------------------------ views */
+function boardView() {
+  const consoleW = 210, top = 54;
+  const aw = W - consoleW - 28, ah = H - top - 8;
+  const s = Math.floor(Math.min(aw / COLS, ah / ROWS));
+  const ox = Math.round(20 + (aw - s * COLS) / 2), oy = Math.round(top + (ah - s * ROWS) / 2);
+  document.getElementById('stage').append(board({ ox, oy, s }));
+  const icon = (fn) => { const [c, g] = canvas(34, 34); fn(g, 17, 17, 30); return c; };
+  const html = `
+  <div class="top">
+    <div class="sq"><svg viewBox="0 0 14 14"><path d="M2 3h10M2 7h10M2 11h10" stroke="currentColor" stroke-width="1.4"/></svg></div>
+    <div class="sq"><svg viewBox="0 0 14 14"><path d="M4 2v10M10 2v10" stroke="currentColor" stroke-width="2"/></svg></div>
+    <div class="sq on" style="font-size:10px;font-weight:600">2×</div>
+    <div class="sector"><b>SECTOR 01 · BOOT SEGMENT</b><span>INCIDENT 26-1127 · ACTIVE</span></div>
+    <div class="spacer"></div>
+    <div class="next">NEXT <span class="tag">WRM <i>×22</i></span><span class="tag">SPY <i>×6</i></span></div>
+    <div class="wave">WAVE 07<em>/15</em></div>
+  </div>
+  <div class="console">
+    <div class="c-head">
+      <div><div class="lbl">Core integrity</div><div class="big">17<small> / 20</small></div></div>
+      <div class="bits"><div class="lbl">Bits</div><div class="big">214</div><div class="gain">+14</div></div>
+      <div class="integ"><i style="width:85%"></i></div>
+    </div>
+    <div class="tabs"><div>DEPLOY</div><div class="on">ASSET</div><div>LOG</div></div>
+    <div class="asset">
+      <div class="a-top"><span id="aicon"></span><div><div class="a-name">SANDBOX</div><div class="a-tier">MK II · NODE C-04 · 9 PURGED</div></div></div>
+      <div class="stats"><div><span>Payload</span>30</div><div><span>Field</span>1.0</div><div><span>Reach</span>4.5</div><div><span>Cycle</span>2.2s</div></div>
+      <div class="seg"><div class="on">FIRST</div><div>LAST</div><div>STRONG</div><div>NEAR</div></div>
+      <div class="lbl">Choose a branch</div>
+      <div class="branches">
+        <div class="br on"><b>CLUSTER</b><span>Field splits into 4 cells. Clears swarms.</span><em>◆ 85</em></div>
+        <div class="br"><b>REMOTE</b><span>Relay mast. Much longer reach.</span><em>◆ 85</em></div>
+      </div>
+      <div class="row2"><div class="btn">DECOMMISSION +106</div><div class="btn prim">INSTALL ◆ 85</div></div>
+    </div>
+    <div class="c-foot"><span class="t">21:04:17</span> WRM 0x3A purged · <u>INSP C-07</u> · +2</div>
+  </div>
+  <div class="scan"></div>`;
+  document.getElementById('stage').insertAdjacentHTML('beforeend', html);
+  document.getElementById('aicon').append(icon((g, x, y, s) => sandbox(g, x, y, s, 2, null)));
+}
+
+function sheetView() {
+  const [c, g] = canvas(W, H);
+  g.fillStyle = T.bg; g.fillRect(0, 0, W, H);
+  const s = 46;
+  const label = (t, x, y, col = T.dim, size = 7.5) => { g.fillStyle = col; g.font = `500 ${size}px IBM Plex Mono`; g.textAlign = 'center'; g.fillText(t, x, y); };
+  const head = (t, x, y) => { g.fillStyle = T.ink; g.font = `600 9px IBM Plex Mono`; g.textAlign = 'left'; g.fillText(t, x, y); g.strokeStyle = T.line2; g.beginPath(); g.moveTo(x, y + 5); g.lineTo(W - 16, y + 5); g.stroke(); };
+  const cell = (x, y) => { g.strokeStyle = T.line; g.strokeRect(x - s / 2 + 0.5, y - s / 2 + 0.5, s, s); };
+  head('DEFENSES · TIERS AND BRANCHES', 16, 40);
+  const row1 = [
+    ['INSPECTOR', 'MK I', (x, y) => inspector(g, x, y, s, 1)], ['', 'MK II', (x, y) => inspector(g, x, y, s, 2)], ['', 'MK III', (x, y) => inspector(g, x, y, s, 3)],
+    ['RATE LIMITER', 'MK I', (x, y) => limiter(g, x, y, s, 1)], ['', 'MK II', (x, y) => limiter(g, x, y, s, 2)], ['', 'MK III', (x, y) => limiter(g, x, y, s, 3)],
+    ['SANDBOX', 'MK I', (x, y) => sandbox(g, x, y, s, 1)], ['', 'MK II', (x, y) => sandbox(g, x, y, s, 2)], ['', 'CLUSTER', (x, y) => sandbox(g, x, y, s, 3, 'cluster')], ['', 'REMOTE', (x, y) => sandbox(g, x, y, s, 3, 'remote')],
+  ];
+  row1.forEach(([name, tier, fn], i) => { const x = 46 + i * 77, y = 90; cell(x, y); fn(x, y); label(tier, x, y + s / 2 + 12); if (name) label(name, x, 60, T.ink, 8); });
+  head('MALWARE · HEALTH IS LAYERS (EACH HIT STRIPS ONE)', 16, 165);
+  const row2 = [
+    ['WORM', '3 LAYERS', (x, y) => worm(g, x, y, s, 3)], ['', '2', (x, y) => worm(g, x, y, s, 2)], ['', '1', (x, y) => worm(g, x, y, s, 1)], ['', 'PURGED', (x, y) => shatter(g, x, y, s)],
+    ['SPYWARE', '2 LAYERS', (x, y) => spyware(g, x, y, s, 2)], ['', '1', (x, y) => spyware(g, x, y, s, 1)],
+    ['TROJAN', 'DISGUISED', (x, y) => trojan(g, x, y, s, false)], ['', 'REVEALED', (x, y) => trojan(g, x, y, s, true, 4)], ['', 'BREAKING', (x, y) => trojan(g, x, y, s, true, 1)], ['', 'PAYLOAD', (x, y) => { worm(g, x - 10, y - 6, s * 0.8, 1); worm(g, x + 9, y - 2, s * 0.8, 1); worm(g, x - 2, y + 10, s * 0.8, 1); }],
+  ];
+  row2.forEach(([name, tier, fn], i) => { const x = 46 + i * 77, y = 215; cell(x, y); fn(x, y); label(tier, x, y + s / 2 + 12); if (name) label(name, x, 185, T.ink, 8); });
+  head('EFFECTS', 16, 290);
+  // inspector beam
+  { const x = 46, y = 340; inspector(g, x, y, s * 0.8, 2); const tx = x + 110, ty = y - 10; worm(g, tx, ty, s, 2); g.save(); glow(g, T.fr, 6); g.strokeStyle = rgba(T.fr, 0.85); g.beginPath(); g.moveTo(x, y); g.lineTo(tx, ty); g.stroke(); const o = 9, kk = 4; g.strokeStyle = T.fr; for (const [qx, qy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { g.beginPath(); g.moveTo(tx + qx * o, ty + qy * (o - kk)); g.lineTo(tx + qx * o, ty + qy * o); g.lineTo(tx + qx * (o - kk), ty + qy * o); g.stroke(); } g.restore(); label('INSPECT: BEAM LOCK, STRIPS A LAYER', x + 60, y + 30); }
+  // limiter pinch
+  { const x0 = 260, y = 335, L = 170; const pts = [[x0, y], [x0 + L, y]]; g.strokeStyle = rgba(T.hot, 0.35); g.beginPath(); g.moveTo(x0, y - 10); g.lineTo(x0 + L, y - 10); g.moveTo(x0, y + 10); g.lineTo(x0 + L, y + 10); g.stroke(); g.strokeStyle = T.fr; g.lineWidth = 1.2; g.beginPath(); g.moveTo(x0 + 50, y - 10); g.lineTo(x0 + 65, y - 5); g.lineTo(x0 + 105, y - 5); g.lineTo(x0 + 120, y - 10); g.moveTo(x0 + 50, y + 10); g.lineTo(x0 + 65, y + 5); g.lineTo(x0 + 105, y + 5); g.lineTo(x0 + 120, y + 10); g.stroke(); g.lineWidth = 1; [[x0 + 20, 3], [x0 + 72, 3], [x0 + 85, 3], [x0 + 98, 2], [x0 + 150, 3]].forEach(([x, l]) => worm(g, x, y, s * 0.7, l)); limiter(g, x0 + 85, y - 30, s * 0.55, 2); label('RATE LIMIT: LINK PINCHES, TRAFFIC BUNCHES', x0 + 85, y + 30); }
+  // sandbox field
+  { const x = 560, y = 335, r = 20; g.save(); glow(g, T.fr, 8); g.strokeStyle = T.fr; g.lineWidth = 1.2; g.strokeRect(x - r, y - r, r * 2, r * 2); g.strokeStyle = rgba(T.fr, 0.45); g.strokeRect(x - r * 0.7 + 4, y - r * 0.7 - 4, r * 1.4, r * 1.4); g.restore(); worm(g, x - 6, y + 4, s * 0.8, 1); shatter(g, x + 6, y - 2, s * 0.7); label('SANDBOX: ISOLATE, THEN DETONATE', x, y + 30); }
+  // bits token
+  { const x = 760, y = 335; g.save(); glow(g, T.fr, 8); g.strokeStyle = T.fr; g.lineWidth = 1.2; poly(g, [[x, y - 9], [x + 9, y], [x, y + 9], [x - 9, y]]); g.stroke(); g.fillStyle = rgba(T.fr, 0.25); g.fill(); g.restore(); g.fillStyle = T.fr; g.font = '600 9px IBM Plex Mono'; g.textAlign = 'left'; g.fillText('+14', x + 13, y + 3); label('KILLS MERGE INTO ONE TOKEN', x, y + 30); }
+  document.getElementById('stage').append(c);
+  document.getElementById('stage').insertAdjacentHTML('beforeend', `<div class="sheet-title">${{ a: 'A · TACTICAL', b: 'B · PHOSPHOR', c: 'C · OPS' }[THEME]}  ·  REFERENCE SHEET</div><div class="scan"></div>`);
+}
+
+Promise.all(['400','500','600'].map((w) => document.fonts.load(`${w} 10px "IBM Plex Mono"`)).concat(document.fonts.load('600 10px "IBM Plex Sans Condensed"'))).finally(() => { (VIEW === 'sheet' ? sheetView : boardView)(); document.body.dataset.ready = '1'; });
+</script>
+</body>
+</html>
