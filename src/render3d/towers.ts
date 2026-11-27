@@ -13,7 +13,9 @@
  * on, lit, deployed) and reports shots through `onFire` for the effects layer.
  */
 import * as THREE from 'three';
-import { MAT, ROLE, at, box, contactShadow, cyl, glow, lightPool, prism, ring, strut } from './kit';
+import { GEN, MAT, ROLE, at, axle, barrel, box, contactShadow, cyl, glow, hexFlat, hexX, joint, lightPool, prism, ring, strut } from './kit';
+
+const ring_ = ring;
 
 export type Stage = 'mk1' | 'mk2' | 'mk3' | 'cluster1' | 'cluster2' | 'remote1' | 'remote2';
 
@@ -37,6 +39,8 @@ export abstract class Tower3D {
   alert = 0;
   range = 2.2;
   onFire: ((e: FireEvent) => void) | null = null;
+  /** World positions this tower is currently locked onto (the lab draws target brackets). */
+  locks: THREE.Vector3[] = [];
   protected glows: GlowRef[] = [];
   protected pool!: THREE.Mesh;
   protected cooldown = 0;
@@ -54,14 +58,14 @@ export abstract class Tower3D {
     this.root.add(this.pool, contactShadow(shadowR));
   }
 
-  /** World-space target position or null. */
-  update(dt: number, t: number, target: THREE.Vector3 | null): void {
-    const want = target ? 1 : 0;
+  /** `targets`: world positions of hostiles in range and in sight, nearest first. */
+  update(dt: number, t: number, targets: THREE.Vector3[]): void {
+    const want = targets.length ? 1 : 0;
     this.alert += (want - this.alert) * Math.min(1, dt * (want ? 5 : 1.6));
     this.flash = Math.max(0, this.flash - dt * 6);
     for (const g of this.glows) g.mat.emissiveIntensity = g.idle + (g.active - g.idle) * this.alert + this.flash * g.active * 0.6;
     (this.pool.material as THREE.MeshBasicMaterial).opacity = 0.05 + this.alert * 0.16 + this.flash * 0.08;
-    this.animate(dt, t, target);
+    this.animate(dt, t, targets);
     this.cooldown -= dt;
   }
 
@@ -71,131 +75,256 @@ export abstract class Tower3D {
     return Math.atan2(target.x - tmp.x, target.z - tmp.z) - this.root.rotation.y;
   }
 
-  protected abstract animate(dt: number, t: number, target: THREE.Vector3 | null): void;
+  protected abstract animate(dt: number, t: number, targets: THREE.Vector3[]): void;
+}
+
+/** Underdamped spring: snaps toward the goal with a little overshoot (the Inspector's twitchy gaze). */
+class Spring {
+  v = 0;
+  constructor(public x = 0) {}
+  step(goal: number, k: number, c: number, dt: number, angular = true): number {
+    const err = angular ? wrap(goal - this.x) : goal - this.x;
+    this.v += (k * err - c * this.v) * dt;
+    this.x += this.v * dt;
+    return this.x;
+  }
 }
 
 /* ================================================================ INSPECTOR */
 /*
- * Mk I  PROBE     pedestal + one lens                       (base)
- * Mk II SENTINEL  armored body (durability), heat sinks (fire rate), hooded
- *                 larger lens (damage), first side pod on an arm
- * Mk III ARRAY    plinth, taller column (range), bigger heat sinks (rate),
- *                 multi-element lens (damage), the pod becomes three pods
+ * Personality: nervous, hyper-vigilant. Idle it doesn't sweep, it glances: snaps
+ * to a spot, holds, snaps elsewhere, sometimes double-takes. Alert it locks hard,
+ * the lens focuses (iris closes), and it fires in short bursts.
+ *
+ * Mk I  PROBE     gen 1: a mechanical camera on a yoke, one lens
+ * Mk II SENTINEL  gen 1: the same camera armored, hooded, longer focusing barrel
+ *                 (damage), heat sinks (fire rate), first side sensor pod
+ * Mk III ARRAY    gen 2, new technology: ceramic and glass; the camera becomes a
+ *                 compound-eye sensor dome with a scan band; the heat sinks evolve
+ *                 into liquid-cooled exchange panels; the side pod becomes three
+ *                 drones that dock on the plinth and lift off on tethers when alert
  */
+interface Drone { g: THREE.Group; dock: THREE.Vector3; lift: number; yaw: Spring; tether: THREE.Mesh; lens: THREE.Object3D; cd: number }
+
 export class Inspector extends Tower3D {
-  private head = new THREE.Group();
-  private pods: THREE.Group[] = [];
-  private lens: THREE.Object3D;
-  private yaw = 0;
-  private podYaw: number[] = [];
+  private yawG = new THREE.Group();
+  private pitchG = new THREE.Group();
+  private yaw = new Spring();
+  private pitch = new Spring();
+  private gaze = 0;
+  private gazePitch = 0;
+  private nextGlance = 0;
+  private lensTip = new THREE.Object3D();
+  private iris: THREE.Object3D | null = null;
+  private focusRing: THREE.Object3D | null = null;
+  private scanBand: THREE.Object3D | null = null;
+  private pod: { g: THREE.Group; yaw: Spring; gaze: number } | null = null;
+  private drones: Drone[] = [];
+  private burstLeft = 0;
+  private burstT = 0;
+  private focus = 0;
 
   constructor(readonly tier: 1 | 2 | 3) {
     super();
     const col = ROLE.dmg;
-    const lensMat = this.addGlow(col, 0.5, 3.2);
-    const trim = this.addGlow(col, 0.25, 1.6);
-    this.base(col, 0.45 + tier * 0.12, 0.25 + tier * 0.07);
+    const lensMat = this.addGlow(col, 0.6, 3.6);
+    const ledMat = this.addGlow(col, 0.35, 2.2);
+    this.base(col, 0.4 + tier * 0.14, 0.24 + tier * 0.08);
     this.range = [2.4, 2.8, 3.2][tier - 1];
+    if (tier === 1) this.buildProbe(lensMat, ledMat);
+    else if (tier === 2) this.buildSentinel(lensMat, ledMat);
+    else this.buildArray(lensMat, this.addGlow(col, 0.25, 1.1));
+  }
+
+  /** Lens assembly on the camera body's front face (z = front). Records the tip for beams. */
+  private lens(front: number, barrelR: number, barrelLen: number, lensMat: THREE.Material, parent: THREE.Object3D, ring = false): void {
+    at(barrel(barrelR, barrelLen, GEN.gunmetalDark), 0, 0, front, parent);
+    if (ring) { this.focusRing = joint(at(ring_(barrelR + 0.004, 0.009, GEN.trim), 0, 0, front + barrelLen * 0.62, parent)); }
+    joint(at(barrel(barrelR * 0.8, 0.012, lensMat), 0, 0, front + barrelLen - 0.008, parent));
+    this.iris = joint(at(ring_(barrelR * 0.62, barrelR * 0.12, GEN.rubber), 0, 0, front + barrelLen + 0.006, parent));
+    at(this.lensTip, 0, 0, front + barrelLen + 0.01, parent);
+  }
+
+  private buildProbe(lensMat: THREE.Material, ledMat: THREE.Material): void {
     const r = this.root;
-    let y = 0;
+    at(hexX(0.2, 0.06, GEN.gunmetal), 0, 0, 0, r);
+    joint(at(hexX(0.205, 0.012, GEN.trim), 0, 0.048, 0, r));
+    at(cyl(0.065, 0.04, GEN.trim), 0, 0.06, 0, r);
+    at(this.yawG, 0, 0.1, 0, r);
+    // yoke: bottom bar between two side plates
+    at(box(0.222, 0.025, 0.06, GEN.gunmetal, 0.006), 0, 0, 0, this.yawG);
+    for (const sx of [-1, 1]) at(box(0.022, 0.15, 0.06, GEN.gunmetal, 0.006), sx * 0.122, 0, 0, this.yawG);
+    // camera on a pitch axle
+    at(this.pitchG, 0, 0.1, 0, this.yawG);
+    at(box(0.2, 0.12, 0.17, GEN.armor, 0.014), 0, -0.06, 0, this.pitchG);
+    joint(at(axle(0.018, 0.26, GEN.trim), 0, 0, 0, this.pitchG));
+    joint(at(box(0.05, 0.012, 0.012, ledMat, 0.003), -0.05, 0.035, -0.086, this.pitchG));
+    this.lens(0.085, 0.048, 0.07, lensMat, this.pitchG);
+  }
 
-    if (tier === 1) {
-      at(prism(6, 0.2, 0.09, MAT.body), 0, 0, 0, r);
-      at(cyl(0.06, 0.1, MAT.plate), 0, 0.09, 0, r);
-      y = 0.19;
+  private buildSentinel(lensMat: THREE.Material, ledMat: THREE.Material): void {
+    const r = this.root;
+    at(hexX(0.3, 0.05, GEN.gunmetalDark), 0, 0, 0, r);
+    at(hexX(0.24, 0.16, GEN.gunmetal), 0, 0.05, 0, r);
+    joint(at(hexX(0.246, 0.016, GEN.trim), 0, 0.195, 0, r));
+    joint(at(hexX(0.243, 0.01, ledMat), 0, 0.12, 0, r));
+    // heat sinks bolted to the two side flats (fire rate)
+    const flat = hexFlat(0.24);
+    for (const sx of [-1, 1]) {
+      at(box(0.04, 0.13, 0.15, GEN.armor, 0.008), sx * (flat + 0.02), 0.065, 0, r);
+      for (let i = 0; i < 5; i++) at(box(0.08, 0.12, 0.012, GEN.fin, 0.003), sx * (flat + 0.04 + 0.04), 0.07, -0.06 + i * 0.03, r);
     }
-    if (tier >= 2) {
-      const big = tier === 3;
-      // plinth (Mk III) / base plate (Mk II)
-      if (big) {
-        at(prism(8, 0.46, 0.06, MAT.dark), 0, 0, 0, r);
-        for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; at(box(0.035, 0.012, 0.035, trim, 0.004), Math.sin(a) * 0.4, 0.06, Math.cos(a) * 0.4, r); }
-      } else at(prism(6, 0.34, 0.05, MAT.dark), 0, 0, 0, r);
-      const b0 = big ? 0.06 : 0.05;
-      // armored body with a lit band
-      const bodyR = big ? 0.3 : 0.25, bodyH = big ? 0.15 : 0.2;
-      at(prism(6, bodyR, bodyH, MAT.body), 0, b0, 0, r);
-      at(prism(6, bodyR + 0.006, 0.022, trim), 0, b0 + bodyH * 0.45, 0, r);
-      // heat sinks on both flanks: a mounting block and a stack of fins (more and taller at Mk III)
-      const fins = big ? 7 : 5, finH = big ? 0.2 : 0.15;
-      for (const sx of [-1, 1]) {
-        at(box(0.07, finH, 0.2, MAT.heavy, 0.01), sx * (bodyR + 0.02), b0, 0, r);
-        for (let i = 0; i < fins; i++) at(box(0.09, finH * 0.92, 0.012, MAT.fin, 0.003), sx * (bodyR + 0.1), b0 + finH * 0.04, -0.09 + (i * 0.18) / (fins - 1), r);
+    at(cyl(0.1, 0.035, GEN.trim), 0, 0.21, 0, r);
+    at(this.yawG, 0, 0.245, 0, r);
+    at(box(0.29, 0.035, 0.1, GEN.armor, 0.008), 0, 0, 0, this.yawG);
+    for (const sx of [-1, 1]) at(box(0.03, 0.2, 0.09, GEN.armor, 0.008), sx * 0.16, 0, 0, this.yawG);
+    at(this.pitchG, 0, 0.135, 0, this.yawG);
+    at(box(0.26, 0.15, 0.22, GEN.gunmetal, 0.016), 0, -0.075, 0, this.pitchG);
+    joint(at(axle(0.022, 0.33, GEN.trim), 0, 0, 0, this.pitchG));
+    at(box(0.2, 0.025, 0.12, GEN.armor, 0.006), 0, 0.075, 0.05, this.pitchG); // hood
+    joint(at(box(0.07, 0.014, 0.012, ledMat, 0.003), -0.06, 0.03, -0.112, this.pitchG));
+    this.lens(0.11, 0.065, 0.1, lensMat, this.pitchG, true);
+    // first side sensor pod, on an arm off the right yoke plate
+    at(box(0.06, 0.03, 0.04, GEN.armor, 0.006), 0.205, 0.135, 0, this.yawG);
+    const pod = at(new THREE.Group(), 0.27, 0.15, 0, this.yawG);
+    at(box(0.07, 0.06, 0.08, GEN.gunmetal, 0.01), 0, -0.03, 0, pod);
+    at(barrel(0.02, 0.035, GEN.gunmetalDark), 0, 0, 0.04, pod);
+    joint(at(barrel(0.015, 0.008, lensMat), 0, 0, 0.07, pod));
+    this.pod = { g: pod, yaw: new Spring(), gaze: 0 };
+  }
+
+  private buildArray(lensMat: THREE.Material, ledMat: THREE.Material): void {
+    const r = this.root;
+    // ceramic plinth with an inlaid light ring
+    at(prism(8, 0.44, 0.06, GEN.ceramic), 0, 0, 0, r);
+    joint(at(new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.005, 6, 8).rotateX(Math.PI / 2).rotateY(Math.PI / 8), ledMat), 0, 0.062, 0, r));
+    // drone docks: three charging cradles
+    const docks: THREE.Vector3[] = [];
+    for (let k = 0; k < 3; k++) {
+      const a = Math.PI + (k * Math.PI * 2) / 3;
+      const p = new THREE.Vector3(Math.sin(a) * 0.33, 0.06, Math.cos(a) * 0.33);
+      at(cyl(0.065, 0.025, GEN.ceramicEdge), p.x, p.y, p.z, r);
+      joint(at(ring_(0.045, 0.005, ledMat), p.x, p.y + 0.026, p.z, r));
+      docks.push(p.clone().setY(p.y + 0.027));
+    }
+    // body; the Mk II heat sinks have evolved into liquid-cooled exchange panels
+    at(hexX(0.25, 0.14, GEN.ceramic), 0, 0.06, 0, r);
+    joint(at(hexX(0.255, 0.012, GEN.ceramicEdge), 0, 0.19, 0, r));
+    const flat = hexFlat(0.25);
+    for (const sx of [-1, 1]) {
+      at(box(0.03, 0.12, 0.16, GEN.ceramicEdge, 0.008), sx * (flat + 0.015), 0.07, 0, r);
+      for (const z of [-0.05, 0, 0.05]) joint(at(box(0.005, 0.1, 0.01, ledMat, 0.002), sx * (flat + 0.032), 0.08, z, r));
+    }
+    // slim column with light inlays
+    at(cyl(0.12, 0.2, GEN.ceramic), 0, 0.2, 0, r);
+    for (const a of [-0.6, 0, 0.6]) joint(at(box(0.006, 0.17, 0.006, ledMat, 0.002), Math.sin(a) * 0.121, 0.215, Math.cos(a) * 0.121, r));
+    at(cyl(0.13, 0.02, GEN.ceramicEdge), 0, 0.4, 0, r);
+    // gimballed sensor dome with a compound eye and a sweeping scan band
+    at(this.yawG, 0, 0.42, 0, r);
+    at(cyl(0.1, 0.025, GEN.ceramicEdge), 0, 0, 0, this.yawG);
+    for (const sx of [-1, 1]) at(box(0.025, 0.22, 0.06, GEN.ceramic, 0.008), sx * 0.168, 0.025, 0, this.yawG);
+    at(this.pitchG, 0, 0.175, 0, this.yawG);
+    const dome = at(new THREE.Mesh(new THREE.SphereGeometry(0.14, 32, 20), GEN.darkGlass), 0, 0, 0, this.pitchG);
+    dome.castShadow = true;
+    joint(at(axle(0.02, 0.34, GEN.ceramicEdge), 0, 0, 0, this.pitchG));
+    const facets = [[0, 0], [0.3, 0], [-0.3, 0], [0.15, 0.26], [-0.15, 0.26], [0.15, -0.26], [-0.15, -0.26]];
+    for (const [ax, ay] of facets) {
+      const d = new THREE.Vector3(Math.sin(ax), Math.sin(ay), 1).normalize();
+      for (const [rad, mat, out] of [[0.042, GEN.ceramicEdge, 0.131], [0.034, lensMat, 0.139]] as const) {
+        const f = joint(new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, 0.012, 6), mat));
+        f.position.copy(d).multiplyScalar(out);
+        f.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+        this.pitchG.add(f);
       }
-      if (big) {
-        // vents in the lower body's front face
-        for (let i = 0; i < 6; i++) at(box(0.022, 0.07, 0.01, MAT.well, 0.003), -0.1 + i * 0.04, b0 + 0.04, bodyR * 0.866 + 0.002, r);
-        // upper column: the extra height is the extra range
-        at(prism(6, 0.2, 0.24, MAT.heavy), 0, b0 + bodyH, 0, r);
-        for (const sx of [-1, 1]) at(box(0.014, 0.2, 0.012, trim, 0.003), sx * 0.07, b0 + bodyH + 0.02, 0.174, r);
-        y = b0 + bodyH + 0.24;
-      } else y = b0 + bodyH;
     }
-
-    // head: housing, lens (and hood from Mk II), yaws to track
-    at(this.head, 0, y, 0, r);
-    const hw = [0.2, 0.26, 0.3][tier - 1], hh = [0.12, 0.14, 0.16][tier - 1], hd = [0.18, 0.24, 0.28][tier - 1];
-    at(box(hw, hh, hd, MAT.plate, 0.02), 0, 0, 0, this.head);
-    const lensR = [0.045, 0.06, 0.07][tier - 1];
-    const lens = new THREE.Group();
-    at(lens, 0, hh * 0.5, hd / 2, this.head);
-    lens.rotation.x = Math.PI / 2 - 0.5; // the eye looks forward and down
-    at(cyl(lensR + 0.02, 0.035, MAT.heavy), 0, 0, 0, lens);
-    if (tier === 3) at(cyl(lensR + 0.008, 0.045, MAT.dark), 0, 0, 0, lens);
-    at(cyl(lensR, 0.05, lensMat), 0, 0, 0, lens);
-    this.lens = lens;
-    if (tier >= 2) at(box(hw * 0.7, 0.03, 0.09, MAT.heavy, 0.008), 0, hh, hd / 2 - 0.02, this.head); // hood
-    if (tier === 3) { // antenna on the back of the head
-      at(cyl(0.012, 0.22, MAT.fin), hw * 0.3, hh, -hd * 0.35, this.head);
-      const tip = at(new THREE.Mesh(new THREE.SphereGeometry(0.018, 10, 8), trim), hw * 0.3, hh + 0.23, -hd * 0.35, this.head);
-      tip.castShadow = false;
-    }
-
-    // side pods: one on an arm from the head at Mk II, three on arms from the column at Mk III
-    const makePod = (parent: THREE.Object3D, size: number) => {
-      const pod = new THREE.Group();
-      at(box(size, size * 0.85, size * 1.1, MAT.plate, 0.012), 0, 0, 0, pod);
-      const pl = new THREE.Group();
-      at(pl, 0, size * 0.42, size * 0.55, pod);
-      pl.rotation.x = Math.PI / 2 - 0.5;
-      at(cyl(size * 0.3, 0.02, MAT.heavy), 0, 0, 0, pl);
-      at(cyl(size * 0.2, 0.03, lensMat), 0, 0, 0, pl);
-      parent.add(pod);
-      this.pods.push(pod);
-      this.podYaw.push(0);
-      return pod;
-    };
-    if (tier === 2) {
-      at(box(0.1, 0.03, 0.04, MAT.heavy, 0.006), hw / 2 + 0.04, hh * 0.35, 0, this.head);
-      at(makePod(this.head, 0.085), hw / 2 + 0.12, hh * 0.15, 0, undefined);
-    }
-    if (tier === 3) {
-      const colTop = y - 0.04;
-      for (let k = 0; k < 3; k++) {
-        const a = Math.PI + (k * Math.PI * 2) / 3; // one at the back, two front-diagonal
-        const px = Math.sin(a) * 0.38, pz = Math.cos(a) * 0.38;
-        r.add(strut(new THREE.Vector3(Math.sin(a) * 0.15, colTop, Math.cos(a) * 0.15), new THREE.Vector3(px, colTop - 0.06, pz), 0.022, MAT.heavy));
-        at(cyl(0.035, 0.05, MAT.heavy), px, colTop - 0.11, pz, r);
-        at(makePod(r, 0.1), px, colTop - 0.06, pz, undefined);
-      }
+    this.scanBand = joint(at(new THREE.Mesh(new THREE.TorusGeometry(0.146, 0.004, 6, 48), ledMat), 0, 0, 0, this.pitchG));
+    at(this.lensTip, 0, 0, 0.15, this.pitchG);
+    // emitter spike on the right fork
+    at(cyl(0.008, 0.13, GEN.trim), 0.168, 0.245, 0, this.yawG);
+    at(new THREE.Mesh(new THREE.SphereGeometry(0.014, 10, 8), ledMat), 0.168, 0.38, 0, this.yawG);
+    // drones
+    const tetherMat = new THREE.MeshBasicMaterial({ color: ROLE.dmg.clone().multiplyScalar(1.6), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    for (const dock of docks) {
+      const g = at(new THREE.Group(), dock.x, dock.y, dock.z, r);
+      at(hexX(0.05, 0.03, GEN.ceramic), 0, 0, 0, g);
+      joint(at(hexX(0.034, 0.01, GEN.ceramicEdge), 0, 0.03, 0, g));
+      joint(at(ring_(0.03, 0.006, ledMat), 0, 0.002, 0, g));
+      const lens = at(new THREE.Object3D(), 0, 0.016, 0.078, g);
+      at(barrel(0.014, 0.025, GEN.gunmetalDark), 0, 0.016, 0.049, g);
+      joint(at(barrel(0.011, 0.006, lensMat), 0, 0.016, 0.07, g));
+      const tether = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 6), tetherMat.clone());
+      tether.castShadow = false;
+      r.add(tether);
+      this.drones.push({ g, dock, lift: 0, yaw: new Spring(), tether, lens, cd: Math.random() });
     }
   }
 
-  protected animate(dt: number, t: number, target: THREE.Vector3 | null): void {
-    const want = target ? this.yawTo(this.head, target) : Math.sin(t * 0.55 + this.phase) * 1.1;
-    this.yaw = turn(this.yaw, want, target ? 7 : 1.2, dt);
-    this.head.rotation.y = this.yaw;
-    this.pods.forEach((p, i) => {
-      const w = target ? this.yawTo(p, target) : Math.sin(t * 0.7 + this.phase + i * 2.1) * 1.3;
-      this.podYaw[i] = turn(this.podYaw[i], w, target ? 6 : 1.4, dt);
-      // pods on the head inherit its yaw; only add their own offset
-      p.rotation.y = this.tier === 2 ? this.podYaw[i] - this.yaw : this.podYaw[i];
-    });
-    if (target && this.alert > 0.75 && this.cooldown <= 0 && Math.abs(wrap(want - this.yaw)) < 0.15) {
-      this.cooldown = [0.5, 0.38, 0.28][this.tier - 1];
-      this.flash = 1;
-      this.onFire?.({ from: this.lens.getWorldPosition(new THREE.Vector3()), to: target.clone(), kind: 'beam', color: ROLE.dmg });
+  protected animate(dt: number, t: number, targets: THREE.Vector3[]): void {
+    const target = targets[0] ?? null;
+    this.locks.length = 0;
+    // gaze: glances while idle, hard lock when alert
+    if (target) {
+      this.gaze = this.yawTo(this.yawG, target);
+      this.yawG.getWorldPosition(tmp);
+      this.gazePitch = Math.atan2(tmp.y + 0.12 - target.y, Math.hypot(target.x - tmp.x, target.z - tmp.z));
+    } else if (t >= this.nextGlance) {
+      const double = Math.random() < 0.3;
+      this.gaze = (Math.random() * 2 - 1) * 1.35;
+      this.gazePitch = -0.1 + Math.random() * 0.35;
+      this.nextGlance = t + (double ? 0.18 + Math.random() * 0.15 : 0.6 + Math.random() * 1.3);
     }
+    const [k, c] = target ? [420, 30] : [170, 13];
+    this.yawG.rotation.y = this.yaw.step(this.gaze, k, c, dt);
+    this.pitchG.rotation.x = this.pitch.step(this.gazePitch, k * 0.8, c, dt, false);
+    const onTarget = target && Math.abs(wrap(this.gaze - this.yaw.x)) < 0.12;
+    if (onTarget) this.locks.push(target!);
+    // focus: the iris closes down while locked, the focus ring turns
+    this.focus += ((onTarget ? 1 : 0) - this.focus) * Math.min(1, dt * 8);
+    if (this.iris) this.iris.scale.setScalar(1 - this.focus * 0.45);
+    if (this.focusRing) this.focusRing.rotation.z += dt * this.focus * 6;
+    if (this.scanBand) { this.scanBand.rotation.y = Math.sin(t * (target ? 4 : 1.4)) * 1.2; }
+    // bursts
+    if (onTarget && this.burstLeft === 0 && this.cooldown <= 0 && this.focus > 0.7) { this.burstLeft = [2, 3, 4][this.tier - 1]; this.burstT = 0; }
+    if (this.burstLeft > 0) {
+      this.burstT -= dt;
+      if (this.burstT <= 0 && target) {
+        this.burstLeft--;
+        this.burstT = 0.075;
+        this.flash = 1;
+        this.onFire?.({ from: this.lensTip.getWorldPosition(new THREE.Vector3()), to: target.clone(), kind: 'beam', color: ROLE.dmg });
+        if (this.burstLeft === 0) this.cooldown = [0.9, 0.75, 0.6][this.tier - 1];
+      } else if (!target) this.burstLeft = 0;
+    }
+    // Mk II side pod: its own glances when idle, follows the head's target when alert
+    if (this.pod) {
+      const p = this.pod;
+      if (target) p.gaze = this.yawTo(p.g, target) - this.yaw.x;
+      else if (Math.random() < dt * 0.8) p.gaze = (Math.random() * 2 - 1) * 1.2;
+      p.g.rotation.y = p.yaw.step(p.gaze, 260, 18, dt);
+    }
+    // Mk III drones: lift off when alert, each watches a different hostile
+    this.drones.forEach((d, i) => {
+      d.lift += ((this.alert > 0.5 ? 1 : 0) - d.lift) * Math.min(1, dt * 1.8);
+      const e = d.lift * d.lift * (3 - 2 * d.lift);
+      const ang = Math.atan2(d.dock.x, d.dock.z) + Math.sin(t * 0.6 + i * 2.1) * 0.25 * e;
+      const rad = 0.33 + 0.18 * e;
+      d.g.position.set(Math.sin(ang) * rad, d.dock.y + e * (0.5 + 0.035 * Math.sin(t * 2.3 + i)), Math.cos(ang) * rad);
+      const tg = targets.length ? targets[i % targets.length] : null;
+      const want = tg ? this.yawTo(d.g, tg) : (e > 0.05 ? Math.sin(t * 0.9 + i * 2) * 1.5 : ang);
+      d.g.rotation.y = d.yaw.step(want, 200, 16, dt);
+      // tether from the dock to the drone
+      const a = d.dock, b = d.g.position;
+      d.tether.position.copy(a).add(b).multiplyScalar(0.5);
+      d.tether.scale.set(1, Math.max(0.001, a.distanceTo(b)), 1);
+      d.tether.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), tmp.copy(b).sub(a).normalize());
+      (d.tether.material as THREE.MeshBasicMaterial).opacity = e > 0.05 ? e * (0.55 + 0.25 * Math.sin(t * 20 + i)) : 0;
+      d.cd -= dt;
+      if (tg && e > 0.9 && d.cd <= 0) {
+        d.cd = 0.8 + Math.random() * 0.3;
+        this.locks.push(tg);
+        this.onFire?.({ from: d.lens.getWorldPosition(new THREE.Vector3()), to: tg.clone(), kind: 'beam', color: ROLE.dmg });
+      }
+    });
   }
 }
 
@@ -289,7 +418,7 @@ export class RateLimiter extends Tower3D {
     r.add(this.field);
   }
 
-  protected animate(dt: number, t: number): void {
+  protected animate(dt: number, t: number, _targets: THREE.Vector3[]): void {
     this.open += (this.alert - this.open) * Math.min(1, dt * 3);
     const breathe = 0.08 * Math.sin(t * 1.4 + this.phase) * (1 - this.alert);
     for (const p of this.blades) p.rotation.y = -0.15 - (this.open * 0.9 + breathe);
@@ -427,7 +556,8 @@ export class Sandbox extends Tower3D {
     }
   }
 
-  protected animate(dt: number, t: number, target: THREE.Vector3 | null): void {
+  protected animate(dt: number, t: number, targets: THREE.Vector3[]): void {
+    const target = targets[0] ?? null;
     // lid slides open, core lifts out of the well, pod cores lift too
     this.lidX += (this.alert - this.lidX) * Math.min(1, dt * 4);
     this.lids.forEach((l, i) => { l.position.x = (i ? 1 : -1) * (0.077 + this.lidX * 0.13); });
