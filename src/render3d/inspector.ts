@@ -30,7 +30,7 @@ const POD_R = 0.32, POD_POST_H = 0.2;
 /** Pod bearings (theta: x = sin, z = cos). Mk II's pod is front-right; Mk III adds back and front-left. */
 const POD_THETA = [60 * D, 180 * D, 300 * D];
 
-interface Pod { spin: THREE.Group; slot: THREE.MeshStandardMaterial; yaw: Spring; speed: number; stutter: number; sweep: number }
+interface Pod { spin: THREE.Group; slot: THREE.MeshStandardMaterial; yaw: Spring; speed: number; sweep: number }
 
 export class Inspector extends Tower3D {
   private lensMat: THREE.MeshStandardMaterial;
@@ -196,8 +196,8 @@ export class Inspector extends Tower3D {
         joint(at(box(0.15, 0.014, 0.004, slot, 0.0015), 0, 0.032, s * 0.0125, spin));
         for (let k = 0; k < 5; k++) joint(at(box(0.003, 0.016, 0.005, GEN.rubber, 0.001), -0.06 + k * 0.03, 0.031, s * 0.0125, spin));
       }
-      const yaw = new Spring(Math.random() * Math.PI * 2);
-      this.pods.push({ spin, slot, yaw, speed: 3 + Math.random(), stutter: 0, sweep: Math.random() * 10 });
+      const yaw = new Spring((i * 2 * Math.PI) / 3);
+      this.pods.push({ spin, slot, yaw, speed: 2.8, sweep: i * 2 });
     }
 
     /* ------------------------------------------------- scan ping + trace */
@@ -247,10 +247,8 @@ export class Inspector extends Tower3D {
         p.spin.rotation.y = p.yaw.step(want, 380, 26, dt);
         if (Math.abs(wrap(want - p.yaw.x)) < 0.4) aligned = true;
       } else {
-        p.stutter -= dt;
-        if (p.stutter < -1.5 - Math.random() * 3) p.stutter = 0.12 + Math.random() * 0.25;
-        const v = p.stutter > 0 ? 0 : p.speed;
-        p.yaw.v += (v - p.yaw.v) * Math.min(1, dt * (p.stutter > 0 ? 14 : 3));
+        // steady radar rotation; after a contact it eases back up to speed
+        p.yaw.v += (p.speed - p.yaw.v) * Math.min(1, dt * 2.5);
         p.yaw.x += p.yaw.v * dt;
         p.spin.rotation.y = p.yaw.x;
       }
