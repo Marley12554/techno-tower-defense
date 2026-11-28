@@ -4,7 +4,7 @@ import { contactShadow, glow, lightPool } from './kit';
 
 export type Stage = 'mk1' | 'mk2' | 'mk3' | 'cluster1' | 'cluster2' | 'remote1' | 'remote2';
 
-export interface FireEvent { from: THREE.Vector3; to: THREE.Vector3; kind: 'beam' | 'isolate' | 'field'; color: THREE.Color; tier?: number }
+export interface FireEvent { from: THREE.Vector3; to: THREE.Vector3; kind: 'beam' | 'isolate' | 'field'; color: THREE.Color; tier?: number; bomblets?: number }
 
 export const tmp = new THREE.Vector3();
 

@@ -17,21 +17,24 @@ import { InspectorCamera } from '../../src/render3d/legacy/r8-camera';
 import { InspectorRobot } from '../../src/render3d/legacy/r8-robot';
 import { buildTower as buildR5 } from '../../src/render3d/legacy/r5';
 import { buildTower as buildR4 } from '../../src/render3d/legacy/r4';
+import { buildPrev } from '../../src/render3d/legacy/r7';
+import { Tesseract } from '../../src/render3d/tesseract';
 import { GEN, ROLE, box, contactShadow, findClipping, glow, lightPool } from '../../src/render3d/kit';
 import { showCompromised } from './compromised';
 
 type Lineage = 'inspector' | 'throttler' | 'sandbox';
 const LINEAGES: Record<Lineage, { label: string; color: string; redone: boolean; stages: [Stage, string, string][] }> = {
   inspector: { label: 'INSPECTOR', color: '#46c8ff', redone: true, stages: [['mk1', 'MK I', 'PROBE'], ['mk2', 'MK II', 'SENTINEL'], ['mk3', 'MK III', 'ARRAY']] },
-  throttler: { label: 'THROTTLER', color: '#a58bff', redone: false, stages: [['mk1', 'MK I', 'GATE'], ['mk2', 'MK II', 'CLAMP'], ['mk3', 'MK III', 'CHOKEPOINT']] },
-  sandbox: { label: 'SANDBOX', color: '#35e0b2', redone: false, stages: [['mk1', 'MK I', 'CELL'], ['mk2', 'MK II', 'VAULT'], ['cluster1', 'CLUSTER I', '4 PODS'], ['cluster2', 'CLUSTER II', '6 PODS'], ['remote1', 'REMOTE I', 'RELAY'], ['remote2', 'REMOTE II', 'UPLINK']] },
+  throttler: { label: 'THROTTLER', color: '#a58bff', redone: true, stages: [['mk1', 'MK I', 'GATE'], ['mk2', 'MK II', 'CLAMP'], ['mk3', 'MK III', 'CHOKEPOINT']] },
+  // branch tier IIs are apex tiers, built later with the Inspector and Throttler Mk IVs
+  sandbox: { label: 'SANDBOX', color: '#35e0b2', redone: true, stages: [['mk1', 'MK I', 'CELL'], ['mk2', 'MK II', 'VAULT'], ['cluster1', 'CLUSTER I', 'SATELLITES'], ['remote1', 'REMOTE I', 'RELAY']] },
 };
 /* Older rounds stay viewable for comparison, behind the ⋯ menu. */
-type Version = 'current' | 'r8a' | 'r8b' | 'r6' | 'r5' | 'r4';
+type Version = 'current' | 'r8a' | 'r8b' | 'r7' | 'r6' | 'r5' | 'r4';
 const VERSIONS: Record<Lineage, { id: Version | '2d'; label: string }[]> = {
   inspector: [{ id: 'current', label: 'Current (round 10 · v3 Array lineage)' }, { id: 'r8a', label: 'Round 8 A · camera on a yoke' }, { id: 'r8b', label: 'Round 8 B · anxious robot' }, { id: 'r6', label: 'Round 6 · eye in a socket' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
-  throttler: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
-  sandbox: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
+  throttler: [{ id: 'current', label: 'Current (round 10)' }, { id: 'r7', label: 'Previous 3D (rounds 4-7)' }, { id: '2d', label: 'Original 2D frames' }],
+  sandbox: [{ id: 'current', label: 'Current (round 10)' }, { id: 'r7', label: 'Previous 3D (rounds 4-7)' }, { id: '2d', label: 'Original 2D frames' }],
 };
 let version: Version = 'current';
 /** What the lab needs from any tower, whichever round it comes from. */
@@ -41,6 +44,7 @@ function makeTower(kind: Lineage, stage: Stage): LabTower {
   if (version === 'r8a' && kind === 'inspector') return new InspectorCamera(tier) as unknown as LabTower;
   if (version === 'r8b' && kind === 'inspector') return new InspectorRobot(tier) as unknown as LabTower;
   const old = kind === 'throttler' ? 'limiter' : kind; // older rounds still call it the limiter
+  if (version === 'r7' && kind !== 'inspector') return buildPrev(old as 'limiter' | 'sandbox', stage) as unknown as LabTower;
   if (version === 'r6') return buildR6(old, stage) as unknown as LabTower;
   if (version === 'r5') return buildR5(old, stage) as unknown as LabTower;
   if (version === 'r4') {
@@ -273,14 +277,30 @@ function onFire(e: FireEvent): void {
     addFx(spark, 0.15, (k) => { (spark.material as THREE.MeshBasicMaterial).opacity = 1 - k; spark.scale.setScalar(1 + k * 2); });
     if (pk) hit(pk, 1);
   } else {
-    const geo = new THREE.BoxGeometry(1, 1, 1);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: e.color.clone().multiplyScalar(2.5), transparent: true }));
-    const fill = new THREE.Mesh(geo, additive(e.color, 0.12));
-    const grp = new THREE.Group(); grp.add(edges, fill);
-    grp.position.copy(to);
-    addFx(grp, 0.6, (k) => { grp.scale.setScalar(k < 0.25 ? 0.25 + (k / 0.25) * 0.4 : 0.65 - (k - 0.25) * 0.5); (edges.material as THREE.LineBasicMaterial).opacity = 1 - k * k; (fill.material as THREE.MeshBasicMaterial).opacity = 0.14 * (1 - k); });
+    // Sandbox: a tesseract cage forms around the target, then folds in on itself
+    cage(to, 0.16, e.tier === 1 ? 3 : 4, 0);
+    for (let i = 0; i < (e.bomblets ?? 0); i++) {
+      const a = (i / (e.bomblets ?? 1)) * Math.PI * 2 + 0.4;
+      cage(to.clone().add(new THREE.Vector3(Math.cos(a) * 0.32, 0, Math.sin(a) * 0.32)), 0.07, 3, 0.12 + i * 0.05);
+      if (pk) hit(pk, 1);
+    }
     if (pk) hit(pk, 3);
   }
+}
+function cage(at: THREE.Vector3, size: number, dims: 3 | 4, delay: number): void {
+  const tz = new Tesseract(ROLE.area, size, dims, 1.4);
+  tz.group.position.copy(at);
+  tz.setOpacity(0);
+  const T = 0.75 + delay, d0 = delay / T;
+  addFx(tz.group, T, (k) => {
+    const u = Math.max(0, (k - d0) / (1 - d0));
+    // forms over the first 40% (opacity eases in, no pop), then folds in and fades
+    tz.scale = u < 0.4 ? 1.35 - (u / 0.4) * 0.35 : 1 - ((u - 0.4) / 0.6) ** 1.5 * 0.95;
+    tz.setOpacity(u <= 0 ? 0 : u < 0.4 ? u / 0.4 : 1 - ((u - 0.4) / 0.6) ** 2);
+    tz.xw = u * 7; tz.zw = u * 4.5; tz.tumble = u * 2;
+    tz.update();
+    if (k >= 1) tz.dispose();
+  });
 }
 function hit(p: Packet, n: number): void {
   p.hits += n;
