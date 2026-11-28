@@ -15,7 +15,7 @@
  *
  * No face, no aiming head: the lens is set into the top of a fixed body and
  * targeting shows through light. Personality is nervous equipment: radar bars
- * spin a little too fast and stutter, quick scan pings, a flickering lens; on a
+ * spin steadily and fast, quick scan pings, a flickering lens; on a
  * hostile the bars snap to its bearing and sweep across it, the iris tightens,
  * the halo contracts, and the lens fires in short bursts.
  */
@@ -238,7 +238,7 @@ export class Inspector extends Tower3D {
     const target = targets[0] ?? null;
     this.locks.length = 0;
 
-    // radar bars: idle = spinning a bit too fast, with stutters; alert = snap to the bearing and sweep across it
+    // radar bars: idle = steady spin; alert = snap to the bearing and sweep across it
     let aligned = this.pods.length === 0;
     for (const p of this.pods) {
       if (target) {
