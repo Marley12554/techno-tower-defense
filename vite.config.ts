@@ -15,6 +15,7 @@ export default defineConfig({
         frames2: fileURLToPath(new URL('./design/frames/v2.html', import.meta.url)),
         frames3: fileURLToPath(new URL('./design/frames/v3-towers.html', import.meta.url)),
         lab: fileURLToPath(new URL('./design/lab.html', import.meta.url)),
+        sketches: fileURLToPath(new URL('./design/sketches.html', import.meta.url)),
       },
     },
   },

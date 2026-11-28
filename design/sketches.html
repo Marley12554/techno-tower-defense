@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0c0f" />
+<title>Concept Sketches</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+  :root { --bg: #0a0c0f; --panel: #0f1216; --edge: #232a32; --ink: #e2e9f0; --dim: #7a8592; --mute: #4c5662; --dmg: #46c8ff; --area: #35e0b2; --sup: #a58bff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  body { padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); }
+  header { max-width: 1200px; margin: 0 auto 18px; }
+  h1 { font-family: 'IBM Plex Sans Condensed', sans-serif; font-weight: 600; font-size: 20px; letter-spacing: 2px; margin: 0 0 6px; }
+  header p { color: var(--dim); font-size: 12px; line-height: 1.55; max-width: 760px; margin: 0; }
+  header a { color: var(--ink); }
+  section { max-width: 1200px; margin: 26px auto 0; }
+  h2 { font-family: 'IBM Plex Sans Condensed', sans-serif; font-weight: 600; font-size: 15px; letter-spacing: 2px; margin: 0 0 4px; display: flex; align-items: baseline; gap: 10px; }
+  h2 small { font-family: 'IBM Plex Mono'; font-size: 10px; letter-spacing: 1.4px; font-weight: 500; }
+  .tool { color: var(--dim); font-size: 11px; margin-bottom: 10px; }
+  .dir { display: grid; grid-template-columns: 250px 1fr; gap: 14px; padding: 12px; background: var(--panel); border: 1px solid var(--edge); margin-bottom: 8px; }
+  .dir .txt b { display: block; font-family: 'IBM Plex Sans Condensed', sans-serif; font-size: 15px; letter-spacing: 1px; margin-bottom: 4px; }
+  .dir .txt .tag { font-size: 9px; letter-spacing: 1.4px; color: var(--dim); margin-right: 6px; }
+  .dir .txt p { margin: 5px 0 0; font-size: 11px; line-height: 1.45; color: #b8c3cf; }
+  .tiles { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(120px, 1fr); gap: 8px; overflow-x: auto; }
+  .tile { position: relative; background: #0c0f13; border: 1px solid #1a2028; min-height: 180px; }
+  .tile canvas { display: block; width: 100%; height: 180px; }
+  .tile span { position: absolute; left: 0; right: 0; bottom: 5px; text-align: center; font-size: 9px; letter-spacing: 1.3px; color: var(--dim); }
+  .tile.atk { border-color: #2a2230; }
+  .tile.atk span { color: #c49cff; }
+  @media (max-width: 760px) { .dir { grid-template-columns: 1fr; } .tiles { grid-auto-columns: 132px; } }
+</style>
+</head>
+<body>
+  <header>
+    <h1>CONCEPT SKETCHES · ROUND 9</h1>
+    <p>Three directions per tower. Each is a dark hardware base with a construct of light above it that visualizes the tool. The strips show how each one <b>transforms</b> from Mk I to Mk III (the defining structure rebuilds itself; no bigger copies, no bolted-on accessories). The last tile in each row sketches its attack. These are quick line sketches to judge the idea, not final art. Pick a direction per tower, or mix. <a href="./lab.html">Tower Lab</a> · <a href="./">all design frames</a></p>
+  </header>
+  <div id="root"></div>
+  <script type="module" src="./sketches/main.ts"></script>
+</body>
+</html>
