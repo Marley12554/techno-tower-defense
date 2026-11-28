@@ -19,7 +19,7 @@ import { Inspector } from './inspector';
 
 export { Tower3D, type FireEvent, type Stage };
 
-/* ============================================================= RATE LIMITER */
+/* ============================================================= THROTTLER *
 /*
  * Mk I  GATE        drum + iris (slow)
  * Mk II CLAMP       clamp arms grip the drum (stronger slow), more blades,
@@ -27,7 +27,7 @@ export { Tower3D, type FireEvent, type Stage };
  * Mk III CHOKEPOINT the clamp blocks extend into pylons (range), solid collar
  *                   ring on top of them, stacked drums, telescoping pedestal
  */
-export class RateLimiter extends Tower3D {
+export class Throttler extends Tower3D {
   private blades: THREE.Group[] = [];
   private pedestal: THREE.Mesh[] = [];
   private core: THREE.Mesh;
@@ -270,9 +270,9 @@ export class Sandbox extends Tower3D {
   }
 }
 
-export function buildTower(kind: 'inspector' | 'limiter' | 'sandbox', stage: Stage): Tower3D {
+export function buildTower(kind: 'inspector' | 'throttler' | 'sandbox', stage: Stage): Tower3D {
   const tier = (stage === 'mk1' ? 1 : stage === 'mk2' ? 2 : 3) as 1 | 2 | 3;
   if (kind === 'inspector') return new Inspector(tier);
-  if (kind === 'limiter') return new RateLimiter(tier);
+  if (kind === 'throttler') return new Throttler(tier);
   return new Sandbox(stage as Exclude<Stage, 'mk3'>);
 }

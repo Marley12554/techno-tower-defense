@@ -4,7 +4,7 @@
  * tracking, firing. The far side of the loop runs through a covered tunnel
  * behind a wall, out of sight. Design review tool; models live in src/render3d.
  *
- *   ?lineage=inspector|limiter|sandbox   ?check   (logs clipping parts)
+ *   ?lineage=inspector|throttler|sandbox   ?check   (logs clipping parts)
  */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -20,17 +20,17 @@ import { buildTower as buildR4 } from '../../src/render3d/legacy/r4';
 import { GEN, ROLE, box, contactShadow, findClipping, glow, lightPool } from '../../src/render3d/kit';
 import { showCompromised } from './compromised';
 
-type Lineage = 'inspector' | 'limiter' | 'sandbox';
+type Lineage = 'inspector' | 'throttler' | 'sandbox';
 const LINEAGES: Record<Lineage, { label: string; color: string; redone: boolean; stages: [Stage, string, string][] }> = {
   inspector: { label: 'INSPECTOR', color: '#46c8ff', redone: true, stages: [['mk1', 'MK I', 'PROBE'], ['mk2', 'MK II', 'SENTINEL'], ['mk3', 'MK III', 'ARRAY']] },
-  limiter: { label: 'RATE LIMITER', color: '#a58bff', redone: false, stages: [['mk1', 'MK I', 'GATE'], ['mk2', 'MK II', 'CLAMP'], ['mk3', 'MK III', 'CHOKEPOINT']] },
+  throttler: { label: 'THROTTLER', color: '#a58bff', redone: false, stages: [['mk1', 'MK I', 'GATE'], ['mk2', 'MK II', 'CLAMP'], ['mk3', 'MK III', 'CHOKEPOINT']] },
   sandbox: { label: 'SANDBOX', color: '#35e0b2', redone: false, stages: [['mk1', 'MK I', 'CELL'], ['mk2', 'MK II', 'VAULT'], ['cluster1', 'CLUSTER I', '4 PODS'], ['cluster2', 'CLUSTER II', '6 PODS'], ['remote1', 'REMOTE I', 'RELAY'], ['remote2', 'REMOTE II', 'UPLINK']] },
 };
 /* Older rounds stay viewable for comparison, behind the ⋯ menu. */
 type Version = 'current' | 'r8a' | 'r8b' | 'r6' | 'r5' | 'r4';
 const VERSIONS: Record<Lineage, { id: Version | '2d'; label: string }[]> = {
   inspector: [{ id: 'current', label: 'Current (round 10 · v3 Array lineage)' }, { id: 'r8a', label: 'Round 8 A · camera on a yoke' }, { id: 'r8b', label: 'Round 8 B · anxious robot' }, { id: 'r6', label: 'Round 6 · eye in a socket' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
-  limiter: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
+  throttler: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
   sandbox: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
 };
 let version: Version = 'current';
@@ -40,12 +40,13 @@ function makeTower(kind: Lineage, stage: Stage): LabTower {
   const tier = (stage === 'mk1' ? 1 : stage === 'mk2' ? 2 : 3) as 1 | 2 | 3;
   if (version === 'r8a' && kind === 'inspector') return new InspectorCamera(tier) as unknown as LabTower;
   if (version === 'r8b' && kind === 'inspector') return new InspectorRobot(tier) as unknown as LabTower;
-  if (version === 'r6') return buildR6(kind, stage) as unknown as LabTower;
-  if (version === 'r5') return buildR5(kind, stage) as unknown as LabTower;
+  const old = kind === 'throttler' ? 'limiter' : kind; // older rounds still call it the limiter
+  if (version === 'r6') return buildR6(old, stage) as unknown as LabTower;
+  if (version === 'r5') return buildR5(old, stage) as unknown as LabTower;
   if (version === 'r4') {
-    const old = buildR4(kind, stage);
-    const w: LabTower = { root: old.root, range: old.range, locks: [], onFire: null, update: (dt, t, ts) => old.update(dt, t, ts[0] ?? null) };
-    old.onFire = (e) => w.onFire?.(e);
+    const r4 = buildR4(old, stage);
+    const w: LabTower = { root: r4.root, range: r4.range, locks: [], onFire: null, update: (dt, t, ts) => r4.update(dt, t, ts[0] ?? null) };
+    r4.onFire = (e) => w.onFire?.(e);
     return w;
   }
   return buildTower(kind, stage) as unknown as LabTower;
