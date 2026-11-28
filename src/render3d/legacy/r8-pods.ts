@@ -5,9 +5,9 @@
  * Shared by both Inspector designs.
  */
 import * as THREE from 'three';
-import { GEN, ROLE, at, eyeCap, joint, ring } from './kit';
-import { FIELD_STYLE, LightField } from './field';
-import { Spring, wrap, type Tower3D } from './core';
+import { GEN, ROLE, at, eyeCap, joint, ring } from '../kit';
+import { FIELD_STYLE, LightField } from './r8-field';
+import { Spring, wrap, type Tower3D } from '../core';
 
 interface Pod { g: THREE.Group; cup: THREE.Object3D; yaw: Spring; pitch: Spring; lift: number; field: LightField; pupil: THREE.Object3D; tick: number; flies: boolean; gaze: number }
 

@@ -15,10 +15,10 @@
  *                 coolant lines, antenna, skirt plate; three eye-pods that fly
  */
 import * as THREE from 'three';
-import { GEN, ROLE, at, axle, barrel, box, cyl, hexFlat, hexX, joint, ring } from './kit';
-import { FIELD_STYLE, LightField } from './field';
-import { EyePods } from './pods';
-import { Spring, Tower3D, tmp, wrap } from './core';
+import { GEN, ROLE, at, axle, barrel, box, cyl, hexFlat, hexX, joint, ring } from '../kit';
+import { FIELD_STYLE, LightField } from './r8-field';
+import { EyePods } from './r8-pods';
+import { Spring, Tower3D, tmp, wrap } from '../core';
 
 export class InspectorCamera extends Tower3D {
   private yawG = new THREE.Group();

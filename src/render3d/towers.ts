@@ -15,11 +15,9 @@
 import * as THREE from 'three';
 import { MAT, ROLE, at, box, cyl, glow, prism, ring, strut } from './kit';
 import { Tower3D, turn, type FireEvent, type Stage } from './core';
-import { InspectorCamera } from './inspector-camera';
-import { InspectorRobot } from './inspector-robot';
+import { Inspector } from './inspector';
 
 export { Tower3D, type FireEvent, type Stage };
-export type InspectorVariant = 'camera' | 'robot';
 
 /* ============================================================= RATE LIMITER */
 /*
@@ -272,9 +270,9 @@ export class Sandbox extends Tower3D {
   }
 }
 
-export function buildTower(kind: 'inspector' | 'limiter' | 'sandbox', stage: Stage, variant: InspectorVariant = 'camera'): Tower3D {
+export function buildTower(kind: 'inspector' | 'limiter' | 'sandbox', stage: Stage): Tower3D {
   const tier = (stage === 'mk1' ? 1 : stage === 'mk2' ? 2 : 3) as 1 | 2 | 3;
-  if (kind === 'inspector') return variant === 'robot' ? new InspectorRobot(tier) : new InspectorCamera(tier);
+  if (kind === 'inspector') return new Inspector(tier);
   if (kind === 'limiter') return new RateLimiter(tier);
   return new Sandbox(stage as Exclude<Stage, 'mk3'>);
 }

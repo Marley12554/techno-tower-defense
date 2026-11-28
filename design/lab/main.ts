@@ -13,6 +13,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildTower, type FireEvent, type Stage } from '../../src/render3d/towers';
 import { buildTower as buildR6 } from '../../src/render3d/legacy/r6';
+import { InspectorCamera } from '../../src/render3d/legacy/r8-camera';
+import { InspectorRobot } from '../../src/render3d/legacy/r8-robot';
 import { buildTower as buildR5 } from '../../src/render3d/legacy/r5';
 import { buildTower as buildR4 } from '../../src/render3d/legacy/r4';
 import { GEN, ROLE, box, contactShadow, findClipping, glow, lightPool } from '../../src/render3d/kit';
@@ -25,18 +27,19 @@ const LINEAGES: Record<Lineage, { label: string; color: string; redone: boolean;
   sandbox: { label: 'SANDBOX', color: '#35e0b2', redone: false, stages: [['mk1', 'MK I', 'CELL'], ['mk2', 'MK II', 'VAULT'], ['cluster1', 'CLUSTER I', '4 PODS'], ['cluster2', 'CLUSTER II', '6 PODS'], ['remote1', 'REMOTE I', 'RELAY'], ['remote2', 'REMOTE II', 'UPLINK']] },
 };
 /* Older rounds stay viewable for comparison, behind the ⋯ menu. */
-type Version = 'current' | 'r6' | 'r5' | 'r4';
+type Version = 'current' | 'r8a' | 'r8b' | 'r6' | 'r5' | 'r4';
 const VERSIONS: Record<Lineage, { id: Version | '2d'; label: string }[]> = {
-  inspector: [{ id: 'current', label: 'Current (round 8 · A or B)' }, { id: 'r6', label: 'Round 6 · eye in a socket' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
+  inspector: [{ id: 'current', label: 'Current (round 10 · v3 Array lineage)' }, { id: 'r8a', label: 'Round 8 A · camera on a yoke' }, { id: 'r8b', label: 'Round 8 B · anxious robot' }, { id: 'r6', label: 'Round 6 · eye in a socket' }, { id: 'r5', label: 'Round 5 · camera on a yoke' }, { id: 'r4', label: 'Round 4 · first 3D' }, { id: '2d', label: 'Original 2D frames' }],
   limiter: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
   sandbox: [{ id: 'current', label: 'Current (round 4)' }, { id: '2d', label: 'Original 2D frames' }],
 };
 let version: Version = 'current';
-let variant: 'camera' | 'robot' = (params0().get('variant') as 'camera' | 'robot') || 'camera';
-function params0(): URLSearchParams { return new URLSearchParams(location.search); }
 /** What the lab needs from any tower, whichever round it comes from. */
 interface LabTower { root: THREE.Group; range: number; locks: THREE.Vector3[]; onFire: ((e: FireEvent) => void) | null; update(dt: number, t: number, targets: THREE.Vector3[]): void }
 function makeTower(kind: Lineage, stage: Stage): LabTower {
+  const tier = (stage === 'mk1' ? 1 : stage === 'mk2' ? 2 : 3) as 1 | 2 | 3;
+  if (version === 'r8a' && kind === 'inspector') return new InspectorCamera(tier) as unknown as LabTower;
+  if (version === 'r8b' && kind === 'inspector') return new InspectorRobot(tier) as unknown as LabTower;
   if (version === 'r6') return buildR6(kind, stage) as unknown as LabTower;
   if (version === 'r5') return buildR5(kind, stage) as unknown as LabTower;
   if (version === 'r4') {
@@ -45,7 +48,7 @@ function makeTower(kind: Lineage, stage: Stage): LabTower {
     old.onFire = (e) => w.onFire?.(e);
     return w;
   }
-  return buildTower(kind, stage, variant) as unknown as LabTower;
+  return buildTower(kind, stage) as unknown as LabTower;
 }
 const params = new URLSearchParams(location.search);
 let lineage: Lineage = (params.get('lineage') as Lineage) || 'inspector';
@@ -211,8 +214,6 @@ function buildWorld(): void {
   solo = null;
   updateNote();
   renderVersionMenu();
-  document.getElementById('variant')!.style.display = lineage === 'inspector' && version === 'current' ? 'flex' : 'none';
-  document.querySelectorAll<HTMLButtonElement>('[data-variant]').forEach((b) => b.classList.toggle('on', b.dataset.variant === variant));
   packets.forEach((p, i) => { p.dist = (i / packets.length) * total; });
   focusGoal.copy(HOME); zoomGoal = 1;
   resize();
@@ -429,7 +430,6 @@ function updateNote(): void {
   if (solo !== null && slots[solo]) parts.push(`SOLO · ${slots[solo].name} · TAP EMPTY BOARD TO EXIT`);
   document.getElementById('note')!.textContent = parts.join('   ');
 }
-document.querySelectorAll<HTMLButtonElement>('[data-variant]').forEach((b) => b.addEventListener('click', () => { variant = b.dataset.variant as 'camera' | 'robot'; buildWorld(); }));
 
 /* ------------------------------------------------------------ compare menu */
 const menu = $('vermenu');
@@ -537,8 +537,15 @@ requestAnimationFrame(frame);
   get slots() { return slots; },
   focusOn: (i: number, z = 2.6) => { setSolo(i); zoomGoal = z; },
   unsolo: () => setSolo(null),
-  setVariant: (v: 'camera' | 'robot') => { variant = v; buildWorld(); },
+  setVersion: (v: Version) => { version = v; buildWorld(); },
   setView: (a: number, el: number) => { azim = a; elev = el; },
   setLineage: (l: Lineage) => { lineage = l; buildWorld(); },
+  /** Test hook: puts the hostile on the front straight just before tower i. */
+  parkNear: (i: number) => {
+    const v = new THREE.Vector3();
+    let best = 0, bd = 1e9;
+    for (let d = 0; d < total; d += 0.05) { along(d, v); if (v.z <= WALL_Z) continue; const dd = Math.hypot(v.x - slots[i].x, v.z - slots[i].z); if (dd < bd) { bd = dd; best = d; } }
+    packets[0].dist = best - 0.5;
+  },
 };
 document.body.dataset.ready = '1';

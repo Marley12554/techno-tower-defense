@@ -41,10 +41,6 @@
   .tabs .btn { border-right-width: 0; }
   .tabs .btn:last-child { border-right-width: 1px; }
   .note { position: fixed; left: 50%; top: max(52px, calc(env(safe-area-inset-top) + 46px)); transform: translateX(-50%); font-size: 9px; letter-spacing: 1.6px; color: #ffa940; pointer-events: none; }
-  .variant { position: fixed; left: max(10px, env(safe-area-inset-left)); top: max(48px, calc(env(safe-area-inset-top) + 44px)); display: flex; align-items: center; gap: 0; z-index: 5; }
-  .variant span { font-size: 8.5px; letter-spacing: 1.5px; color: var(--dim); margin-right: 8px; }
-  .variant .btn { height: 28px; border-right-width: 0; }
-  .variant .btn:last-child { border-right-width: 1px; }
   .vermenu { position: fixed; right: max(10px, env(safe-area-inset-right)); top: max(48px, calc(env(safe-area-inset-top) + 44px)); width: 250px; display: none; flex-direction: column; gap: 4px; padding: 8px;
     background: linear-gradient(180deg, #14181d, #0f1216); border: 1px solid var(--edge2); box-shadow: 0 10px 30px rgba(0,0,0,0.6); z-index: 20; }
   .vermenu.open { display: flex; }
@@ -74,7 +70,6 @@
     <button class="btn" id="more" aria-label="More">⋯</button>
   </div>
   <div class="note" id="note"></div>
-  <div class="variant" id="variant"><span>INSPECTOR DESIGN</span><button class="btn" data-variant="camera">A · CAMERA (ROUND 5)</button><button class="btn" data-variant="robot">B · ROBOT</button></div>
   <div class="vermenu" id="vermenu"></div>
   <div class="frames2d" id="frames2d"><iframe src="./frames/v3-towers.html" title="Original 2D tower frames" loading="lazy"></iframe><button class="btn" id="close2d">CLOSE</button></div>
   <div class="hint" id="hint">Tap a tower to solo it · tap empty board to go back · drag to pan · two fingers or right-drag to rotate · pinch or scroll to zoom</div>

@@ -14,10 +14,10 @@
  *                 three eye-pods that fly free
  */
 import * as THREE from 'three';
-import { GEN, ROLE, at, box, cyl, eyeCap, hexFlat, hexX, joint, ring } from './kit';
-import { FIELD_STYLE, LightField } from './field';
-import { EyePods } from './pods';
-import { Spring, Tower3D, tmp, wrap } from './core';
+import { GEN, ROLE, at, box, cyl, eyeCap, hexFlat, hexX, joint, ring } from '../kit';
+import { FIELD_STYLE, LightField } from './r8-field';
+import { EyePods } from './r8-pods';
+import { Spring, Tower3D, tmp, wrap } from '../core';
 
 // One core size for every tier.
 const BASE_R = 0.26, BODY_R = 0.21, BODY_H = 0.12, HW = 0.27, HH = 0.18, HD = 0.23, EYE_R = 0.085;
