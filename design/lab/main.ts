@@ -284,7 +284,7 @@ function onFire(e: FireEvent): void {
 function hit(p: Packet, n: number): void {
   p.hits += n;
   p.regrow = 1.8;
-  for (const m of p.mats) m.emissiveIntensity = 2.5;
+  for (const m of p.mats) m.emissiveIntensity = Math.min(2.2, m.emissiveIntensity + 0.3); // heat builds under fire, no per-hit flash
   if (p.hits >= 5) {
     p.hits = 0;
     if (p.layers > 1) { p.layers--; burstShards(p.pos, 6); }
@@ -500,7 +500,7 @@ function frame(now: number): void {
     p.shells.forEach((s, k) => { s.visible = k < p.layers; s.rotation.y += dt * (0.8 + k * 0.5); s.rotation.x += dt * 0.4; });
     p.g.scale.setScalar(0.7 + 0.3 * (p.layers / 3));
     p.coreMat.emissive.copy(ROLE.hot).lerp(new THREE.Color('#ffd9a8'), 1 - p.layers / 3);
-    for (const m of p.mats) m.emissiveIntensity += (0.8 - m.emissiveIntensity) * Math.min(1, dt * 6);
+    for (const m of p.mats) m.emissiveIntensity += (0.8 - m.emissiveIntensity) * Math.min(1, dt * 1.5);
     p.shadow.position.set(p.pos.x, 0.003, p.pos.z);
     p.pool.position.set(p.pos.x, 0.004, p.pos.z);
   }

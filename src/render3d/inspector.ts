@@ -30,6 +30,23 @@ const POD_R = 0.32, POD_POST_H = 0.2;
 /** Pod bearings (theta: x = sin, z = cos). Mk II's pod is front-right; Mk III adds back and front-left. */
 const POD_THETA = [60 * D, 180 * D, 300 * D];
 
+/** Radar rotation speed (rad/s), shared by the board sweep and the radar bars. */
+const SWEEP_SPEED = 2.2;
+const SWEEP_VS = `varying vec2 vP; void main() { vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+/** A wedge with a fading trail behind its leading edge, soft at the center and the rim. */
+const SWEEP_FS = `
+uniform float uAngle; uniform float uTrail; uniform float uOpacity; uniform vec3 uColor; varying vec2 vP;
+void main() {
+  float r = length(vP);
+  if (r > 1.0) discard;
+  float a = atan(vP.x, vP.y);
+  float d = mod(uAngle - a, 6.28318);
+  float trail = exp(-d * uTrail) + exp(-(6.28318 - d) * 30.0) * 0.5;
+  float radial = smoothstep(0.06, 0.3, r) * (1.0 - 0.75 * r) * smoothstep(1.0, 0.8, r);
+  float rim = smoothstep(0.975, 0.99, r) * smoothstep(1.0, 0.99, r) * 0.15;
+  gl_FragColor = vec4(uColor * (trail * radial + rim * trail) * uOpacity, 1.0);
+}`;
+
 interface Pod { spin: THREE.Group; slot: THREE.MeshStandardMaterial; yaw: Spring; speed: number; sweep: number }
 
 export class Inspector extends Tower3D {
@@ -40,21 +57,20 @@ export class Inspector extends Tower3D {
   private halo: THREE.Group | null = null;
   private haloY = 0;
   private haloMats: THREE.MeshBasicMaterial[] = [];
-  private ping: THREE.Mesh;
-  private pingT = 1;
-  private nextPing = 0;
+  private trimMat: THREE.MeshStandardMaterial;
+  private sweep: THREE.Mesh;
+  private sweepU: { uAngle: { value: number }; uTrail: { value: number }; uOpacity: { value: number }; uColor: { value: THREE.Color } };
+  private sweepYaw = new Spring(0);
   private trace: THREE.Mesh;
+  private pulses: { m: THREE.Mesh; u: number }[] = [];
   private focus = 0;
-  private flicker = 0;
-  private nextFlicker = 0;
-  private burst = 0;
-  private shotT = 0;
+  private breath = 0;
 
   constructor(readonly tier: 1 | 2 | 3) {
     super();
     const col = ROLE.dmg, T = tier, r = this.root;
     this.lensMat = this.addGlow(col, 0.55, 3.2);
-    const trimMat = this.addGlow(col, 0.5, 2.2);
+    const trimMat = this.trimMat = this.addGlow(col, 0.5, 2.2);
     const ventMat = this.addGlow(col, 0.25, 1.6);
     const studMat = this.addGlow(col, 0.6, 2.6);
     this.base(col, [0.5, 0.65, 0.8][T - 1], [0.26, 0.36, 0.44][T - 1]);
@@ -197,13 +213,19 @@ export class Inspector extends Tower3D {
         for (let k = 0; k < 5; k++) joint(at(box(0.003, 0.016, 0.005, GEN.rubber, 0.001), -0.06 + k * 0.03, 0.031, s * 0.0125, spin));
       }
       const yaw = new Spring((i * 2 * Math.PI) / 3);
-      this.pods.push({ spin, slot, yaw, speed: 2.8, sweep: i * 2 });
+      this.pods.push({ spin, slot, yaw, speed: SWEEP_SPEED, sweep: i * 2 });
     }
 
-    /* ------------------------------------------------- scan ping + trace */
-    const pg = new THREE.RingGeometry(0.975, 1, 72); pg.rotateX(-Math.PI / 2);
-    this.ping = at(new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false })), 0, 0.006, 0, r);
-    this.ping.renderOrder = 2;
+    /* --------------------------------- radar sweep on the board + trace */
+    this.sweepU = { uAngle: { value: 0 }, uTrail: { value: 4.5 }, uOpacity: { value: 0.09 }, uColor: { value: col.clone() } };
+    const sg = new THREE.PlaneGeometry(2, 2); sg.rotateX(-Math.PI / 2);
+    this.sweep = at(new THREE.Mesh(sg, new THREE.ShaderMaterial({ uniforms: this.sweepU, vertexShader: SWEEP_VS, fragmentShader: SWEEP_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })), 0, 0.006, 0, r);
+    this.sweep.scale.setScalar(this.range);
+    this.sweep.renderOrder = 2;
+    // energy pulses that travel along the trace and land as hits
+    const pgeo = new THREE.SphereGeometry(0.018, 10, 8);
+    const pmat = new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(2.2), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    for (let i = 0; i < 6; i++) { const m = new THREE.Mesh(pgeo, pmat); m.visible = false; r.add(m); this.pulses.push({ m, u: -1 }); }
     const tg = new THREE.CylinderGeometry(0.0035, 0.0035, 1, 6); tg.translate(0, 0.5, 0);
     this.trace = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(1.4), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.trace.visible = false;
@@ -238,69 +260,78 @@ export class Inspector extends Tower3D {
     const target = targets[0] ?? null;
     this.locks.length = 0;
 
-    // radar bars: idle = steady spin; alert = snap to the bearing and sweep across it
+    // radar sweep: a soft wedge rotates around the board while searching; on contact it
+    // swings to the hostile's bearing and narrows onto it. The radar bars turn with it.
+    if (target) this.sweepYaw.step(this.yawTo(this.sweep, target), 120, 18, dt);
+    else { this.sweepYaw.v += (SWEEP_SPEED - this.sweepYaw.v) * Math.min(1, dt * 2); this.sweepYaw.x += this.sweepYaw.v * dt; }
+    this.sweepU.uAngle.value = this.sweepYaw.x;
+    this.sweepU.uTrail.value = 4.5 + this.alert * 8;
+    this.sweepU.uOpacity.value = 0.09 + this.alert * 0.05;
+
     let aligned = this.pods.length === 0;
     for (const p of this.pods) {
       if (target) {
-        p.sweep += dt * 7;
-        const want = this.yawTo(p.spin, target) + Math.sin(p.sweep) * 0.32 * (1 - this.focus * 0.8);
+        p.sweep += dt * 3;
+        const want = this.yawTo(p.spin, target) + Math.sin(p.sweep) * 0.25 * (1 - this.focus);
         p.spin.rotation.y = p.yaw.step(want, 380, 26, dt);
         if (Math.abs(wrap(want - p.yaw.x)) < 0.4) aligned = true;
       } else {
-        // steady radar rotation; after a contact it eases back up to speed
+        // steady rotation in step with the sweep; after a contact it eases back up to speed
         p.yaw.v += (p.speed - p.yaw.v) * Math.min(1, dt * 2.5);
         p.yaw.x += p.yaw.v * dt;
         p.spin.rotation.y = p.yaw.x;
       }
-      p.slot.emissiveIntensity = 0.6 + this.alert * 2.4 + (target ? 0.6 * Math.abs(Math.cos(p.sweep)) : 0);
+      p.slot.emissiveIntensity = 0.6 + this.alert * 2.4;
     }
     const locked = !!target && this.alert > 0.6 && aligned;
-    this.focus += ((locked ? 1 : 0) - this.focus) * Math.min(1, dt * 7);
-    for (const ir of this.irises) ir.scale.setScalar(1 - this.focus * 0.45 + (target ? 0 : this.flicker * 0.15));
+    this.focus += ((locked ? 1 : 0) - this.focus) * Math.min(1, dt * 4);
 
-    // the lens polls: quick nervous flickers when idle
-    if (t >= this.nextFlicker) { this.flicker = 1; this.nextFlicker = t + (Math.random() < 0.35 ? 0.08 + Math.random() * 0.1 : 0.5 + Math.random() * 1.6); }
-    this.flicker = Math.max(0, this.flicker - dt * 9);
-    this.lensMat.emissiveIntensity += this.flicker * (1 - this.alert) * 1.6;
-
-    // scan pings: a ring sweeps the board out to range; rapid while a hostile is near
-    if (t >= this.nextPing) { this.pingT = 0; this.nextPing = t + (target ? 0.55 : 1.4 + Math.random() * 1.6); }
-    this.pingT = Math.min(1, this.pingT + dt * (target ? 2.2 : 1.6));
-    this.ping.scale.setScalar(0.25 + this.pingT * (this.range - 0.25));
-    (this.ping.material as THREE.MeshBasicMaterial).opacity = 0.14 * (1 - this.pingT) * (1 - this.pingT);
+    // the lens breathes: slow when idle, quicker with a hostile near, steady when locked
+    this.breath += dt * Math.PI * 2 * (0.3 + this.alert * 0.6);
+    const b = (0.5 + 0.5 * Math.sin(this.breath)) * (1 - this.focus);
+    this.lensMat.emissiveIntensity += b * 0.9;
+    this.trimMat.emissiveIntensity += b * 0.35;
+    for (const ir of this.irises) ir.scale.setScalar(1 - this.focus * 0.45 + b * 0.06);
 
     // halo: idles slow and wide; spins up and contracts when locked
     if (this.halo) {
-      this.halo.rotation.y += dt * (0.5 + this.alert * 2.5 + this.focus * 3);
-      this.halo.scale.setScalar(1 - this.focus * 0.18 + Math.sin(t * 2.2) * 0.015);
+      this.halo.rotation.y += dt * (0.5 + this.alert * 1.5 + this.focus * 1.5);
+      this.halo.scale.setScalar(1 - this.focus * 0.18 + b * 0.02);
       this.halo.position.y = this.haloY + this.focus * 0.03;
       this.haloMats[0].opacity = 0.45 + this.alert * 0.35 + this.focus * 0.2;
-      this.haloMats[1].opacity = 0.08 + this.alert * 0.12 + this.flash * 0.15;
+      this.haloMats[1].opacity = 0.08 + this.alert * 0.12 + b * 0.04;
     }
 
-    // tracking trace from the lens while locked, then short bursts of fire
+    // a steady trace while locked; pulses travel down it and land as hits (nothing strobes)
     const tm = this.trace.material as THREE.MeshBasicMaterial;
-    tm.opacity += ((locked ? 0.28 : 0) - tm.opacity) * Math.min(1, dt * 10);
+    tm.opacity += ((locked ? 0.3 : 0) - tm.opacity) * Math.min(1, dt * 6);
     this.trace.visible = tm.opacity > 0.01 && !!target;
-    if (target) {
-      const a = this.lensTip.position, b = this.root.worldToLocal(target.clone());
-      const d = b.clone().sub(a);
+    const a = this.lensTip.position;
+    const tl = target ? this.root.worldToLocal(target.clone()) : null;
+    if (tl) {
+      const d = tl.clone().sub(a);
       this.trace.position.copy(a);
       this.trace.scale.set(1, d.length(), 1);
       this.trace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
     }
     if (locked && target) {
       this.locks.push(target);
-      if (this.cooldown <= 0 && this.burst === 0) { this.burst = [2, 3, 3][this.tier - 1]; this.cooldown = [1.0, 0.8, 0.6][this.tier - 1]; this.shotT = 0; }
+      if (this.cooldown <= 0) {
+        const free = this.pulses.find((q) => q.u < 0);
+        if (free) { free.u = 0; this.cooldown = [0.42, 0.33, 0.26][this.tier - 1]; }
+      }
     }
-    if (this.burst > 0) {
-      this.shotT -= dt;
-      if (this.shotT <= 0 && target) {
-        this.burst--;
-        this.shotT = 0.085;
-        this.flash = 0.5;
-        this.onFire?.({ from: this.lensTip.getWorldPosition(new THREE.Vector3()), to: target.clone(), kind: 'beam', color: ROLE.dmg, tier: this.tier });
-      } else if (!target) this.burst = 0;
+    for (const q of this.pulses) {
+      if (q.u < 0) continue;
+      if (!tl) { q.u = -1; q.m.visible = false; continue; }
+      q.u += dt * 3.2;
+      if (q.u >= 1) {
+        q.u = -1; q.m.visible = false;
+        this.onFire?.({ from: this.lensTip.getWorldPosition(new THREE.Vector3()), to: target!.clone(), kind: 'field', color: ROLE.dmg, tier: this.tier });
+        continue;
+      }
+      q.m.visible = true;
+      q.m.position.lerpVectors(a, tl, q.u);
     }
   }
 }
